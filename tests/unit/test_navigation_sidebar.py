@@ -1,7 +1,8 @@
 import sys
 import pytest
-from PySide6.QtCore import QCoreApplication
+from PySide6.QtCore import QCoreApplication, QVariantAnimation
 from PySide6.QtWidgets import QApplication, QWidget, QLabel
+from shiboken6 import isValid
 from wft.ui.pages.page_id import PageId
 from wft.ui.components.navigation_sidebar import NavigationSidebar
 from wft.ui.theme.tokens import DesignTokens
@@ -123,3 +124,58 @@ class TestNavigationSidebar:
         sidebar.toggle_collapse()
         assert len(results) == 2
         assert results[1] is False
+
+    def test_reduced_motion_creates_no_animation(self, qapp):
+        tokens = DesignTokens(reduced_motion=True)
+        sidebar = NavigationSidebar(tokens)
+        sidebar.toggle_collapse()
+        assert sidebar._animation is None
+
+    def test_animation_created_with_default_tokens(self, qapp):
+        tokens = DesignTokens(reduced_motion=False)
+        sidebar = NavigationSidebar(tokens)
+        sidebar.toggle_collapse()
+        assert sidebar._animation is not None
+        assert isValid(sidebar._animation)
+        sidebar._dispose_animation()
+
+    def test_rapid_toggles_no_crash(self, qapp):
+        tokens = DesignTokens(reduced_motion=True)
+        sidebar = NavigationSidebar(tokens)
+        for _ in range(20):
+            sidebar.toggle_collapse()
+            _process_events()
+
+    def test_rapid_toggles_with_animation_no_crash(self, qapp):
+        tokens = DesignTokens(reduced_motion=False)
+        sidebar = NavigationSidebar(tokens)
+        for _ in range(10):
+            sidebar.toggle_collapse()
+            _process_events()
+        sidebar._dispose_animation()
+
+    def test_dispose_stale_animation_no_error(self, qapp):
+        sidebar = NavigationSidebar()
+        sidebar._animation = QVariantAnimation(sidebar)
+        sidebar._animation.setDuration(1)
+        sidebar._animation.start()
+        _process_events()
+        sidebar._dispose_animation()
+
+    def test_toggle_after_completed_animation_no_crash(self, qapp):
+        tokens = DesignTokens(reduced_motion=False)
+        sidebar = NavigationSidebar(tokens)
+        sidebar.toggle_collapse()
+        _process_events()
+        sidebar.toggle_collapse()
+        _process_events()
+
+    def test_sidebar_expanded_width_final(self, qapp):
+        tokens = DesignTokens(reduced_motion=True)
+        sidebar = NavigationSidebar(tokens)
+        sidebar.toggle_collapse()
+        _process_events()
+        assert sidebar.minimumWidth() == tokens.sidebar_collapsed_width
+        sidebar.toggle_collapse()
+        _process_events()
+        assert sidebar.minimumWidth() == tokens.sidebar_expanded_width

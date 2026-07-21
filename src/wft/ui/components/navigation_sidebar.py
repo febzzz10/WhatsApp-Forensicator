@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, QAbstractAnimation, QVariantAnimation, Signal
+from PySide6.QtCore import Qt, QVariantAnimation, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 from wft.ui.pages.page_id import PageId
 from wft.ui.components.navigation_item import NavigationItem
 from wft.ui.theme.tokens import DesignTokens
@@ -122,33 +123,74 @@ class NavigationSidebar(QWidget):
             if isinstance(w, QLabel) and w.objectName() == "sidebarGroupHeader":
                 w.setVisible(not self._is_collapsed)
 
-        if self._tokens.reduced_motion:
-            self.setMinimumWidth(target)
-            self.setMaximumWidth(target)
-        else:
-            self._animate_width(target)
+        self._animate_width(target)
 
         if self._settings_callback:
             self._settings_callback(self._is_collapsed)
 
-    def _animate_width(self, target: int) -> None:
-        start = self.width()
-        if start == target:
+    def _dispose_animation(self) -> None:
+        old = self._animation
+        self._animation = None
+        if old is None:
             return
-        if self._animation is not None:
-            self._animation.stop()
-        anim = QVariantAnimation(self)
-        anim.setDuration(self._tokens.animation_duration_normal_ms)
-        anim.setStartValue(start)
-        anim.setEndValue(target)
-        anim.valueChanged.connect(lambda v: self._apply_width(v))
-        anim.finished.connect(lambda: self._apply_width(target))
-        anim.start(QAbstractAnimation.DeleteWhenStopped)
-        self._animation = anim
+        if not isValid(old):
+            return
+        try:
+            old.stop()
+        except RuntimeError:
+            pass
+        try:
+            old.valueChanged.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            old.finished.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            old.deleteLater()
+        except RuntimeError:
+            pass
 
-    def _apply_width(self, w: int) -> None:
-        self.setMinimumWidth(w)
-        self.setMaximumWidth(w)
+    def _animate_width(self, target: int) -> None:
+        self._dispose_animation()
+
+        start_width = self.width()
+        if (
+            self._tokens.reduced_motion
+            or start_width == target
+        ):
+            self._apply_sidebar_width(target)
+            return
+
+        animation = QVariantAnimation(self)
+        self._animation = animation
+
+        animation.setDuration(self._tokens.animation_duration_normal_ms)
+        animation.setStartValue(start_width)
+        animation.setEndValue(target)
+        animation.valueChanged.connect(
+            lambda v: self._apply_sidebar_width(v)
+        )
+        animation.finished.connect(
+            lambda anim=animation, tgt=target: self._on_animation_finished(anim, tgt)
+        )
+        animation.start()
+
+    def _on_animation_finished(
+        self,
+        animation: QVariantAnimation,
+        target_width: int,
+    ) -> None:
+        if self._animation is not animation:
+            return
+        self._apply_sidebar_width(target_width)
+        self._dispose_animation()
+
+    def _apply_sidebar_width(self, value: int | float) -> None:
+        width = int(round(value))
+        self.setMinimumWidth(width)
+        self.setMaximumWidth(width)
 
     def _item_count(self) -> int:
         return len(self._items)
