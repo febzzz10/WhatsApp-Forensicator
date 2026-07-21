@@ -1,33 +1,41 @@
+from typing import Optional
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QPushButton, QSizePolicy
+from wft.ui.theme.style_helpers import set_dynamic_property
+
+_LEGACY_STYLE_MAP = {
+    "primary": "primary",
+    "secondary": "secondary",
+    "destructive": "danger",
+    "warning": "secondary",
+}
+
+_VALID_VARIANTS = {"primary", "secondary", "danger", "ghost"}
 
 
 class NeonButton(QPushButton):
-    STYLES = {
-        "primary": "",
-        "secondary": "secondaryButton",
-        "destructive": "destructiveButton",
-        "warning": "warningButton",
-    }
-
     def __init__(
         self,
         text: str = "",
-        style: str = "primary",
+        variant: str = "primary",
         parent=None,
+        style: Optional[str] = None,
     ) -> None:
         super().__init__(text, parent)
-        self._button_style = style
-        obj_name = self.STYLES.get(style, "")
-        if obj_name:
-            self.setObjectName(obj_name)
+        if style is not None:
+            variant = _LEGACY_STYLE_MAP.get(style, "secondary")
         self.setMinimumHeight(36)
         self.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         self.setCursor(Qt.PointingHandCursor)
+        self.set_variant(variant)
+
+    def set_variant(self, variant: str) -> None:
+        set_dynamic_property(
+            self, "variant", variant,
+            allowed_values=_VALID_VARIANTS,
+            default_value="secondary",
+        )
 
     def set_style(self, style: str) -> None:
-        self._button_style = style
-        obj_name = self.STYLES.get(style, "")
-        self.setObjectName(obj_name)
-        self.style().unpolish(self)
-        self.style().polish(self)
+        variant = _LEGACY_STYLE_MAP.get(style, "secondary")
+        self.set_variant(variant)
