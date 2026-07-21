@@ -76,13 +76,49 @@ class TestNavigationSidebar:
     def test_has_collapse_button(self, qapp):
         sidebar = NavigationSidebar()
         assert sidebar._collapse_btn is not None
-        assert sidebar._collapse_btn.objectName() == "sidebarCollapseBtn"
+        assert sidebar._collapse_btn.objectName() == "sidebarToggleBtn"
 
     def test_collapse_button_triggers_toggle(self, qapp):
         sidebar = NavigationSidebar()
         assert not sidebar._is_collapsed
         sidebar._collapse_btn.click()
         assert sidebar._is_collapsed
+
+    def test_no_full_width_menu_bar(self, qapp):
+        sidebar = NavigationSidebar()
+        from PySide6.QtWidgets import QPushButton
+        for btn in sidebar.findChildren(QPushButton):
+            assert btn.objectName() != "sidebarCollapseBtn", "Old full-width menu bar removed"
+
+    def test_toggle_button_compact_dimensions(self, qapp):
+        sidebar = NavigationSidebar()
+        assert sidebar._collapse_btn.minimumWidth() == 36
+        assert sidebar._collapse_btn.maximumWidth() == 36
+        assert sidebar._collapse_btn.minimumHeight() == 36
+        assert sidebar._collapse_btn.maximumHeight() == 36
+
+    def test_toggle_right_aligned_when_expanded(self, qapp):
+        sidebar = NavigationSidebar()
+        top = sidebar._top_layout
+        last_item = top.itemAt(top.count() - 1)
+        assert last_item.widget() is sidebar._collapse_btn
+
+    def test_expanded_icon_and_tooltip(self, qapp):
+        sidebar = NavigationSidebar()
+        assert not sidebar._is_collapsed
+        assert sidebar._collapse_btn.text() == "\u25C0"
+        assert sidebar._collapse_btn.toolTip() == "Collapse sidebar"
+        assert sidebar._collapse_btn.accessibleName() == "Collapse sidebar"
+
+    def test_collapsed_icon_and_tooltip(self, qapp):
+        tokens = DesignTokens(reduced_motion=True)
+        sidebar = NavigationSidebar(tokens)
+        sidebar.toggle_collapse()
+        _process_events()
+        assert sidebar._is_collapsed
+        assert sidebar._collapse_btn.text() == "\u25B6"
+        assert sidebar._collapse_btn.toolTip() == "Expand sidebar"
+        assert sidebar._collapse_btn.accessibleName() == "Expand sidebar"
 
     def test_sidebar_expanded_width(self, qapp):
         tokens = DesignTokens()

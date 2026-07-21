@@ -208,18 +208,26 @@ QLabel#sidebarGroupHeader {{
     font-weight: {_c(tokens, "font_weight_medium")};
     padding: {_c(tokens, "space_8")}px {_c(tokens, "space_12")}px {_c(tokens, "space_4")}px;
 }}
-QPushButton#sidebarCollapseBtn {{
-    background: transparent;
+QPushButton#sidebarToggleBtn {{
+    background-color: {_c(tokens, "surface")};
     color: {_c(tokens, "text_secondary")};
-    border: none;
-    border-radius: {_c(tokens, "radius_small")}px;
-    min-height: {_c(tokens, "compact_button_height")}px;
-    font-size: {_c(tokens, "font_size_section")}px;
-    padding: 0 {_c(tokens, "space_12")}px;
+    border: {_c(tokens, "border_width")}px solid {_c(tokens, "border")};
+    border-radius: {_c(tokens, "radius_medium")}px;
+    font-size: 12px;
+    padding: 0;
 }}
-QPushButton#sidebarCollapseBtn:hover {{
-    color: {_c(tokens, "text_primary")};
+QPushButton#sidebarToggleBtn:hover {{
+    color: {_c(tokens, "primary")};
+    border-color: {_c(tokens, "primary")};
     background-color: {_c(tokens, "surface_hover")};
+}}
+QPushButton#sidebarToggleBtn:pressed {{
+    color: {_c(tokens, "primary_pressed")};
+    border-color: {_c(tokens, "primary_pressed")};
+    background-color: {_c(tokens, "selection_background")};
+}}
+QPushButton#sidebarToggleBtn:focus {{
+    border-color: {_c(tokens, "border_focus")};
 }}
 """
 

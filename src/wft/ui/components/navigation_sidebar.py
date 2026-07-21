@@ -13,6 +13,10 @@ from wft.ui.pages.page_id import PageId
 from wft.ui.components.navigation_item import NavigationItem
 from wft.ui.theme.tokens import DesignTokens
 
+_COLLAPSE_ICON = "\u25C0"
+_EXPAND_ICON = "\u25B6"
+_TOGGLE_SIZE = 36
+
 _GROUPS: list[tuple[str, list[tuple[str, PageId]]]] = [
     ("Case Management", [
         ("Dashboard", PageId.DASHBOARD),
@@ -67,11 +71,21 @@ class NavigationSidebar(QWidget):
         self._outer_layout.setContentsMargins(0, 0, 0, 0)
         self._outer_layout.setSpacing(0)
 
-        self._collapse_btn = QPushButton("\u2630")
-        self._collapse_btn.setObjectName("sidebarCollapseBtn")
+        self._top_layout = QHBoxLayout()
+        self._top_layout.setContentsMargins(0, 8, 0, 4)
+        self._top_layout.setSpacing(0)
+
+        self._collapse_btn = QPushButton(_COLLAPSE_ICON)
+        self._collapse_btn.setObjectName("sidebarToggleBtn")
         self._collapse_btn.setCursor(Qt.PointingHandCursor)
+        self._collapse_btn.setToolTip("Collapse sidebar")
+        self._collapse_btn.setAccessibleName("Collapse sidebar")
+        self._collapse_btn.setFixedSize(_TOGGLE_SIZE, _TOGGLE_SIZE)
         self._collapse_btn.clicked.connect(self.toggle_collapse)
-        self._outer_layout.addWidget(self._collapse_btn)
+
+        self._top_layout.addStretch()
+        self._top_layout.addWidget(self._collapse_btn)
+        self._outer_layout.addLayout(self._top_layout)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -122,6 +136,17 @@ class NavigationSidebar(QWidget):
             w = self._nav_layout.itemAt(i).widget()
             if isinstance(w, QLabel) and w.objectName() == "sidebarGroupHeader":
                 w.setVisible(not self._is_collapsed)
+
+        if self._is_collapsed:
+            self._collapse_btn.setText(_EXPAND_ICON)
+            self._collapse_btn.setToolTip("Expand sidebar")
+            self._collapse_btn.setAccessibleName("Expand sidebar")
+            self._top_layout.setContentsMargins(0, 8, 0, 4)
+        else:
+            self._collapse_btn.setText(_COLLAPSE_ICON)
+            self._collapse_btn.setToolTip("Collapse sidebar")
+            self._collapse_btn.setAccessibleName("Collapse sidebar")
+            self._top_layout.setContentsMargins(0, 8, 0, 4)
 
         self._animate_width(target)
 
