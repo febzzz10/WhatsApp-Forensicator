@@ -194,14 +194,14 @@ class TestDashboardNavigation:
         from wft.bootstrap import Container
         container = Container()
         window = MainWindow(container)
-        assert len(window._nav_items) == 17
+        assert window._sidebar._item_count() == 17
 
     def test_nav_has_required_pages(self, qapp):
         from wft.ui.main_window import MainWindow
         from wft.bootstrap import Container
         container = Container()
         window = MainWindow(container)
-        keys = [k for _, k in window._nav_items]
+        keys = [pid.value for pid in window._sidebar._items]
         required = ["dashboard", "cases", "evidence", "chats", "contacts",
                      "calls", "media", "timeline", "recovered", "voip",
                      "search", "reports", "audit", "settings"]

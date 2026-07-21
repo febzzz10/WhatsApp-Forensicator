@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from PySide6.QtCore import Qt, QSize, Signal, QTimer
 from PySide6.QtGui import QAction, QKeySequence
@@ -12,7 +12,10 @@ from PySide6.QtWidgets import (
 from wft.bootstrap import Container
 from wft.application.services.case_context import ActiveCaseContext
 from wft.ui.themes.theme_manager import ThemeManager
-from wft.ui.components import StatisticCard, NeonButton
+from wft.ui.components import (
+    StatisticCard, NeonButton, AppHeader, NavigationSidebar, PageHeader,
+)
+from wft.ui.pages.page_id import PageId
 from wft.ui.pages.home_page import HomePage
 from wft.ui.pages.dashboard_page import DashboardPage
 from wft.ui.pages.create_case_page import CreateCasePage
@@ -56,147 +59,26 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        root.addWidget(self._build_header())
-        root.addWidget(self._build_kpi_strip())
-        root.addWidget(self._build_nav_bar())
-        root.addWidget(self._build_page_area(), 1)
+        self._app_header = AppHeader()
+        self._app_header.home_clicked.connect(lambda: self.navigate_to(PageId.HOME))
+        root.addWidget(self._app_header)
+
+        content = QHBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(0)
+
+        self._sidebar = NavigationSidebar()
+        self._sidebar.page_selected.connect(self._on_sidebar_nav)
+        content.addWidget(self._sidebar)
+
+        self._pages = QStackedWidget()
+        self._build_page_area()
+        content.addWidget(self._pages, 1)
+
+        root.addLayout(content, 1)
         self._build_status_bar()
 
-    def _build_header(self) -> QFrame:
-        header = QFrame()
-        header.setObjectName("appHeader")
-        header.setStyleSheet(
-            "QFrame#appHeader {"
-            "  background-color: #030A05;"
-            "  border-bottom: 1px solid #087A38;"
-            "  padding: 8px 16px;"
-            "}"
-        )
-        header.setFixedHeight(52)
-
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(16, 8, 16, 8)
-
-        logo = QLabel("\u25C9")
-        logo.setStyleSheet("color: #00F56A; font-size: 22px; font-weight: bold;")
-        layout.addWidget(logo)
-
-        title = QLabel("WHATSAPP FORENSICATOR")
-        title.setStyleSheet("color: #00F56A; font-size: 18px; font-weight: 700; letter-spacing: 1px;")
-        layout.addWidget(title)
-
-        subtitle = QLabel("COMPLETE FORENSICS SUITE")
-        subtitle.setStyleSheet("color: #46A568; font-size: 10px; margin-left: 4px; margin-top: 4px;")
-        layout.addWidget(subtitle)
-
-        layout.addStretch()
-
-        self._case_status_label = QLabel("NO CASE OPEN")
-        self._case_status_label.setStyleSheet("color: #6E9278; font-size: 11px; padding: 4px 12px; border: 1px solid #1D5C34; border-radius: 4px;")
-        layout.addWidget(self._case_status_label)
-
-        integrity_label = QLabel("\u2713 OFFLINE")
-        integrity_label.setStyleSheet("color: #46A568; font-size: 11px; padding: 4px 12px;")
-        layout.addWidget(integrity_label)
-
-        return header
-
-    def _build_kpi_strip(self) -> QFrame:
-        strip = QFrame()
-        strip.setObjectName("kpiStrip")
-        strip.setStyleSheet(
-            "QFrame#kpiStrip {"
-            "  background-color: #020703;"
-            "  border-bottom: 1px solid #1D5C34;"
-            "  padding: 4px 8px;"
-            "}"
-        )
-        strip.setFixedHeight(72)
-
-        layout = QHBoxLayout(strip)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(8)
-
-        self._kpi_cards = {}
-        kpi_defs = [
-            ("conversations", "Conversations"),
-            ("messages", "Messages"),
-            ("recovered", "Recovered"),
-            ("media", "Media"),
-            ("calls", "Calls"),
-            ("contacts", "Contacts"),
-        ]
-        for key, label in kpi_defs:
-            card = StatisticCard(label=label, value="\u2014", action_key=key)
-            card.clicked.connect(self._on_kpi_click)
-            self._kpi_cards[key] = card
-            layout.addWidget(card)
-
-        return strip
-
-    def _build_nav_bar(self) -> QFrame:
-        nav = QFrame()
-        nav.setObjectName("navBar")
-        nav.setStyleSheet(
-            "QFrame#navBar {"
-            "  background-color: #030A05;"
-            "  border-bottom: 1px solid #087A38;"
-            "}"
-        )
-        nav.setFixedHeight(40)
-
-        layout = QHBoxLayout(nav)
-        layout.setContentsMargins(8, 0, 8, 0)
-        layout.setSpacing(0)
-
-        self._nav_tabs = QTabBar()
-        self._nav_tabs.setExpanding(False)
-        self._nav_tabs.setDrawBase(False)
-        self._nav_tabs.currentChanged.connect(self._on_nav_changed)
-        self._nav_tabs.setStyleSheet(
-            "QTabBar::tab {"
-            "  background: transparent; color: #6E9278;"
-            "  border: none; border-bottom: 2px solid transparent;"
-            "  padding: 8px 14px; font-size: 12px; font-weight: 600;"
-            "  min-height: 32px;"
-            "}"
-            "QTabBar::tab:hover { color: #A9C7B2; }"
-            "QTabBar::tab:selected {"
-            "  color: #00F56A; border-bottom: 2px solid #00F56A;"
-            "}"
-        )
-
-        self._nav_items = [
-            ("Dashboard", "dashboard"),
-            ("Cases", "cases"),
-            ("Evidence", "evidence"),
-            ("ADB Extractor", "adb"),
-            ("Decryptor", "decrypt"),
-            ("Chat Viewer", "chats"),
-            ("Contacts", "contacts"),
-            ("Groups", "groups"),
-            ("Calls", "calls"),
-            ("Media", "media"),
-            ("Timeline", "timeline"),
-            ("Recovered", "recovered"),
-            ("VoIP Analysis", "voip"),
-            ("Search", "search"),
-            ("Reports", "reports"),
-            ("Audit", "audit"),
-            ("Settings", "settings"),
-        ]
-        self._nav_map = {}
-
-        for i, (label, key) in enumerate(self._nav_items):
-            idx = self._nav_tabs.addTab(label)
-            self._nav_map[idx] = key
-
-        layout.addWidget(self._nav_tabs, 1)
-        return nav
-
-    def _build_page_area(self) -> QWidget:
-        self._pages = QStackedWidget()
-
+    def _build_page_area(self) -> None:
         self._home_page = HomePage(self._container, self)
         self._create_case_page = CreateCasePage(self._container, self)
         self._dashboard_page = DashboardPage(self._container, self._ctx, self)
@@ -235,27 +117,26 @@ class MainWindow(QMainWindow):
         self._pages.addWidget(self._recovered_page)
         self._pages.addWidget(self._voip_page)
 
-        self._page_map = {
-            "dashboard": self._dashboard_page,
-            "cases": self._create_case_page,
-            "evidence": self._evidence_page,
-            "chats": self._chats_page,
-            "contacts": self._contacts_page,
-            "groups": self._groups_page,
-            "calls": self._calls_page,
-            "media": self._media_page,
-            "timeline": self._timeline_page,
-            "search": self._search_page,
-            "reports": self._reports_page,
-            "audit": self._audit_page,
-            "settings": self._settings_page,
-            "adb": self._adb_page,
-            "decrypt": self._decrypt_page,
-            "recovered": self._recovered_page,
-            "voip": self._voip_page,
+        self._page_map: dict[PageId, QWidget] = {
+            PageId.HOME: self._home_page,
+            PageId.DASHBOARD: self._dashboard_page,
+            PageId.CASES: self._create_case_page,
+            PageId.EVIDENCE: self._evidence_page,
+            PageId.CHATS: self._chats_page,
+            PageId.CONTACTS: self._contacts_page,
+            PageId.GROUPS: self._groups_page,
+            PageId.CALLS: self._calls_page,
+            PageId.MEDIA: self._media_page,
+            PageId.TIMELINE: self._timeline_page,
+            PageId.SEARCH: self._search_page,
+            PageId.REPORTS: self._reports_page,
+            PageId.AUDIT: self._audit_page,
+            PageId.SETTINGS: self._settings_page,
+            PageId.ADB_EXTRACTOR: self._adb_page,
+            PageId.DECRYPTOR: self._decrypt_page,
+            PageId.RECOVERED: self._recovered_page,
+            PageId.VOIP: self._voip_page,
         }
-
-        return self._pages
 
     def _build_status_bar(self) -> None:
         self._sb = QStatusBar()
@@ -291,11 +172,11 @@ class MainWindow(QMainWindow):
 
     def _setup_shortcuts(self) -> None:
         actions = [
-            ("Ctrl+N", lambda: self.navigate_to("cases")),
+            ("Ctrl+N", lambda: self.navigate_to(PageId.CASES)),
             ("Ctrl+O", lambda: self._on_open_case()),
-            ("Ctrl+I", lambda: self.navigate_to("evidence")),
-            ("Ctrl+F", lambda: self.navigate_to("search")),
-            ("Ctrl+R", lambda: self.navigate_to("reports")),
+            ("Ctrl+I", lambda: self.navigate_to(PageId.EVIDENCE)),
+            ("Ctrl+F", lambda: self.navigate_to(PageId.SEARCH)),
+            ("Ctrl+R", lambda: self.navigate_to(PageId.REPORTS)),
             ("Ctrl+L", lambda: self._on_lock_case()),
         ]
         for shortcut, callback in actions:
@@ -304,37 +185,34 @@ class MainWindow(QMainWindow):
             action.triggered.connect(callback)
             self.addAction(action)
 
-    def navigate_to(self, key: str) -> None:
-        if key == "cases":
+    def navigate_to(self, key: Union[str, PageId]) -> None:
+        if isinstance(key, str):
+            try:
+                key = PageId(key)
+            except ValueError:
+                return
+        if key == PageId.CASES:
             self._create_case_page.reset()
-        idx = None
-        for i, (_, k) in enumerate(self._nav_items):
-            if k == key:
-                idx = i
-                break
-        if idx is not None:
-            self._nav_tabs.setCurrentIndex(idx)
-
         page = self._page_map.get(key)
         if page:
             self._pages.setCurrentWidget(page)
+            self._sidebar.set_active(key)
+        else:
+            self._sidebar.set_active(None)
         if page and hasattr(page, "on_activated"):
             QTimer.singleShot(0, page.on_activated)
 
-    def _on_nav_changed(self, index: int) -> None:
-        key = self._nav_map.get(index)
-        if not key:
-            return
-        self.navigate_to(key)
+    def _on_sidebar_nav(self, page_id: PageId) -> None:
+        self.navigate_to(page_id)
 
     def _on_kpi_click(self, key: str) -> None:
         kpi_to_page = {
-            "conversations": "chats",
-            "messages": "chats",
-            "recovered": "recovered",
-            "media": "media",
-            "calls": "calls",
-            "contacts": "contacts",
+            "conversations": PageId.CHATS,
+            "messages": PageId.CHATS,
+            "recovered": PageId.RECOVERED,
+            "media": PageId.MEDIA,
+            "calls": PageId.CALLS,
+            "contacts": PageId.CONTACTS,
         }
         page_key = kpi_to_page.get(key)
         if page_key:
@@ -343,7 +221,8 @@ class MainWindow(QMainWindow):
     def _on_case_changed(self, case_id: int, case_path: str) -> None:
         code_label = Path(case_path).name
         self.setWindowTitle(f"WHATSAPP FORENSICATOR \u2014 {code_label}")
-        self._case_status_label.setText(code_label)
+        self._app_header.set_case_status("OPEN")
+        self._app_header.set_case_name(code_label)
         self._status_case.setText(f"{code_label} \u2022 CASE OPEN")
         self._status_integrity.setText("INTEGRITY: VERIFIED")
         QTimer.singleShot(0, self._refresh_kpi_strip)
@@ -352,13 +231,9 @@ class MainWindow(QMainWindow):
         if not self._ctx.is_active:
             return
         try:
-            stats = self._container.statistics_service.get_case_stats(self._ctx.get_db(), self._ctx.case_id)
-            self._kpi_cards["conversations"].set_value(str(stats.get("conversations", 0)))
-            self._kpi_cards["messages"].set_value(str(stats.get("messages", 0)))
-            self._kpi_cards["recovered"].set_value(str(stats.get("recovered_candidates", 0)))
-            self._kpi_cards["media"].set_value(str(stats.get("media", 0)))
-            self._kpi_cards["calls"].set_value(str(stats.get("calls", 0)))
-            self._kpi_cards["contacts"].set_value(str(stats.get("contacts", 0)))
+            stats = self._container.statistics_service.get_case_stats(
+                self._ctx.get_db(), self._ctx.case_id
+            )
         except Exception:
             pass
 
@@ -381,7 +256,10 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Could not open case:\n{exc}")
 
     def _on_lock_case(self) -> None:
-        QMessageBox.information(self, "Lock Case", "Case locking will be available in a future update.")
+        QMessageBox.information(
+            self, "Lock Case",
+            "Case locking will be available in a future update.",
+        )
 
     def set_theme_manager(self, tm: ThemeManager) -> None:
         self._theme_manager = tm
