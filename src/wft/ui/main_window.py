@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import Optional, Union
 
-from PySide6.QtCore import Qt, QSize, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QStackedWidget, QLabel, QPushButton, QTabBar, QFrame,
+    QStackedWidget, QLabel, QPushButton, QFrame,
     QMessageBox, QStatusBar, QSizePolicy,
 )
 
@@ -13,7 +13,7 @@ from wft.bootstrap import Container
 from wft.application.services.case_context import ActiveCaseContext
 from wft.ui.themes.theme_manager import ThemeManager
 from wft.ui.components import (
-    StatisticCard, NeonButton, AppHeader, NavigationSidebar, PageHeader,
+    AppHeader, NavigationSidebar,
 )
 from wft.ui.pages.page_id import PageId
 from wft.ui.pages.home_page import HomePage
