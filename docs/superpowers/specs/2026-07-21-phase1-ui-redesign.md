@@ -2,8 +2,8 @@
 
 **Date:** 2026-07-21
 **Project:** WhatsApp Forensic Toolkit
-**Status:** Approved design specification (v2)
-**Version:** 1.1
+**Status:** Approved design specification (v3)
+**Version:** 1.2
 
 ---
 
@@ -38,7 +38,7 @@ will be redesigned in Phases 2–6.
 - Main window shell (header + sidebar + page area + status bar)
 - Refactored shared components (NeonButton, StatusBadge, StatusBanner,
   PageHeader, EmptyState, ContentCard, ConfirmDialog)
-- EvidenceBanner → StatusBanner compatibility alias
+- EvidenceBanner → StatusBanner compatibility adapter
 - Global QSS generated from tokens (sole app-level stylesheet)
 - Theme integration with existing settings system
 - Sidebar state persistence
@@ -88,11 +88,14 @@ src/wft/ui/
 │   ├── neon_button.py          # REFACTOR — dynamic property "variant"
 │   ├── status_badge.py         # REFACTOR — dynamic property "status"
 │   ├── status_banner.py        # RENAME from evidence_banner.py
-│   ├── evidence_banner.py      # COMPAT — imports StatusBanner as EvidenceBanner
+│   ├── evidence_banner.py      # COMPAT — adapter wrapping StatusBanner
 │   ├── empty_state.py          # REFACTOR — token-aware
 │   ├── confirm_dialog.py       # NEW — standardized dialog
 │   └── progress_overlay.py     # PRESERVE (unchanged in Phase 1)
-├── pages/                      # PRESERVE — no content changes in Phase 1
+├── pages/
+│   ├── __init__.py
+│   ├── page_id.py              # NEW — PageId StrEnum
+│   └── ... (existing pages preserved)
 ├── workers/                    # PRESERVE
 ├── themes/                     # PRESERVE (legacy QSS files, rollback/reference only)
 └── utils/
@@ -161,11 +164,15 @@ class PageId(StrEnum):
     SETTINGS = "settings"
 ```
 
-One enum member per verified existing page. The QStackedWidget mapping is
-keyed by PageId. Sidebar signals emit PageId. Invalid values raise
-`ValueError` via the StrEnum base. No scattered numeric indexes in new
-code. Existing numeric-index dependencies in the old tab bar must be
-audited and migrated before the old tab bar is removed (see Section 27).
+One enum member per verified existing page. The project requires
+Python >=3.11 (per `pyproject.toml`), so `StrEnum` is valid.
+
+MainWindow or NavigationController maintains a `dict[PageId, QWidget]`
+whose values are registered as children of QStackedWidget. A reverse
+mapping `dict[QWidget, PageId]` is defined only if required by signal
+handlers. No scattered numeric indexes in new code. Existing
+numeric-index dependencies in the old tab bar must be audited and
+migrated before the old tab bar is removed (see Section 27).
 
 ---
 
@@ -255,8 +262,9 @@ When `reduced_motion` is true:
 
 DesignTokens constructor validates all fields on instantiation:
 
-- Color values are valid hex strings (`#RRGGBB` or `#RRGGBBAA`, 4–9
-  characters, valid hexadecimal after `#`)
+- Color values match `^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$` — only
+  `#RRGGBB` or `#RRGGBBAA`. No `#RGB`, no incomplete values, no invalid
+  hex characters.
 - `font_family` is non-empty
 - Spacing, dimension, radius, and animation-duration values are `int`
 - Spacing and radius values are non-negative (zero is valid)
@@ -279,7 +287,7 @@ DesignTokens constructor validates all fields on instantiation:
 - primary: #00C853
 - primary_hover: #00E676
 - primary_pressed: #00A845
-- primary_text: #FFFFFF
+- primary_text: #020703        (dark foreground for ~6.2:1 contrast on #00C853)
 - text_primary: #EAF7EE
 - text_secondary: #9BBAA3
 - text_muted: #6E9278
@@ -288,7 +296,7 @@ DesignTokens constructor validates all fields on instantiation:
 - error: #FF1744
 - information: #00B8D4
 - disabled_background: #1A2E1F
-- disabled_text: #4A6B52
+- disabled_text: #7FA98A        (improved readability on #1A2E1F)
 - selection_background: #1A3D22
 - font_family: "Segoe UI, Noto Sans, sans-serif"
 - reduced_motion: false
@@ -306,35 +314,46 @@ DesignTokens constructor validates all fields on instantiation:
 
 ## 7. ThemeManager
 
-### 7.1 Responsibilities
+### 7.1 Lifecycle
+
+1. Create QApplication.
+2. Create AppSettings and application services.
+3. Create ThemeManager with QApplication and AppSettings dependencies.
+4. Call `load_saved_theme()` — reads settings, does NOT apply QSS until
+   QApplication exists.
+5. Construct MainWindow using the active tokens.
+6. Show MainWindow.
+
+If ThemeManager is created before QApplication, `load_saved_theme()`
+reads settings and caches the theme name but does NOT call
+`setStyleSheet()` until QApplication.instance() is available.
+
+### 7.2 Responsibilities
 
 - Holds the active DesignTokens instance
 - Provides `get_tokens()` — returns current DesignTokens
-- Provides `apply_theme(name, persist=False)` — loads preset, regenerates
-  QSS, reapplies, optionally persists
-- Provides `set_theme(name)` — convenience wrapper with `persist=True`
-  for explicit user changes
-- Provides `load_saved_theme()` — reads settings at startup, falls back
-  to dark_forensic, does NOT persist the fallback
+- Provides `apply_theme(name, persist=False) -> bool` — loads preset,
+  regenerates QSS, reapplies, optionally persists. Returns True on
+  success, False on failure. On failure, keeps the previously active
+  theme and does NOT persist the invalid value.
+- Provides `set_theme(name) -> bool` — convenience wrapper with
+  `persist=True` for explicit user changes. Returns True on success,
+  False on failure. Does NOT silently fall back to dark_forensic for
+  invalid explicit user selections — caller must handle the False case.
+- Provides `load_saved_theme()` — reads `ui.theme` from AppSettings at
+  startup. If missing or invalid → uses dark_forensic without persisting.
+  If valid → loads and applies the preset. Never writes to settings.
 - Generates application-wide QSS via QSS builder sections
 - Emits `theme_changed(str)` signal after successful application
-- Theme settings are saved only after an explicit user change via
-  `set_theme()` or `apply_theme(name, persist=True)`
-- Startup fallback must NOT overwrite settings with the default value
 - Unrelated settings remain untouched
 - Failure to generate or apply QSS falls back to minimal built-in QSS
-  (flat fallback with readable defaults)
+  (flat fallback with readable default colors)
 
-### 7.2 Safety
+### 7.3 Safety
 
-- QApplication.instance() is verified before `setStyleSheet()` is called
-- If QApplication does not exist yet, QSS application is deferred or
-  skipped with a logged warning
-
-### 7.3 Instantiation
-
-Created once in bootstrap (Container). Passed to MainWindow and exposed
-to pages that need token access. Not a singleton — one instance per app.
+- `QApplication.instance()` is verified before `setStyleSheet()` is
+  called. If QApplication does not exist yet, QSS application is queued
+  or skipped with a logged warning.
 
 ### 7.4 QSS Application Order
 
@@ -379,13 +398,11 @@ NavigationItem[active="true"] { ... }
 For standard Qt widgets, use class-name selectors or object-name selectors
 to avoid accidentally styling unrelated widgets of the same class.
 
-Invalid dynamic-property values are normalized before assignment:
+Invalid dynamic-property values are normalized before assignment by
+`set_dynamic_property()`:
 - Invalid button variant → `"secondary"`
 - Invalid badge status → `"neutral"`
 - Invalid banner type → `"info"`
-
-Normalization is performed by `set_dynamic_property()` in the shared
-style helper.
 
 ### 7.6 Theme Application Sequence
 
@@ -397,6 +414,8 @@ style helper.
    - Does NOT write to settings
 3. User changes theme in Settings → calls `theme_manager.set_theme(name)`
    - Applies and persists to settings
+   - Returns False on invalid name; caller shows error to user
+   - Does NOT silently reset to default for explicit user selections
 4. Settings page theme selector never shows high_contrast in Phase 1
 
 ---
@@ -471,22 +490,49 @@ def set_dynamic_property(
     widget: QWidget,
     name: str,
     value: object,
-    normalize: Optional[dict] = None,
-) -> None:
+    *,
+    allowed_values: Collection[object] | None = None,
+    default_value: object | None = None,
+) -> object:
     """Set a dynamic property and refresh widget style.
 
-    If *normalize* is provided, unknown values are mapped to a default.
-    Example: normalize={"variant": {"primary", "secondary", "danger", "ghost"},
-                       "default": "secondary"}
+    If *value* is not in *allowed_values*, *default_value* is substituted.
+    Returns the actual value assigned.
+
+    If the property is already set to *value*, the widget is NOT
+    repolished (avoids unnecessary style passes).
     """
-    if normalize is not None:
-        allowed = normalize.get(name, set())
-        default = normalize.get("default", value)
-        if isinstance(allowed, dict):
-            if value not in allowed.get(name, set()):
-                value = allowed.get("default", value)
+    if allowed_values is not None and value not in allowed_values:
+        value = default_value
+
+    if widget.property(name) == value:
+        return value
+
     widget.setProperty(name, value)
     refresh_style(widget)
+    return value
+```
+
+Usage:
+
+```python
+set_dynamic_property(
+    button, "variant", variant,
+    allowed_values={"primary", "secondary", "danger", "ghost"},
+    default_value="secondary",
+)
+
+set_dynamic_property(
+    badge, "status", status,
+    allowed_values={"success", "warning", "error", "information", "neutral"},
+    default_value="neutral",
+)
+
+set_dynamic_property(
+    banner, "banner_type", banner_type,
+    allowed_values={"verified", "warning", "hash_mismatch", "unsupported", "info"},
+    default_value="info",
+)
 ```
 
 ---
@@ -501,19 +547,23 @@ QMainWindow
 ├── centralWidget
 │   └── rootLayout (QVBoxLayout, margins=0, spacing=0)
 │       ├── AppHeader (min 48px, via sizeHint/QSizePolicy)
-│       │   ├── [logo icon] "WhatsApp Forensicator"  "v1.0.0a1"
+│       │   ├── [logo icon, clickable → HOME]
+│       │   ├── "WhatsApp Forensicator" — 22px semibold
+│       │   ├── version label — 12px muted
 │       │   ├── (stretch)
-│       │   └── [case status badge] [case name, elided]
+│       │   ├── [case status badge]
+│       │   └── [case name, elided with tooltip]
 │       └── contentLayout (QHBoxLayout, margins=0, spacing=0)
 │           ├── NavigationSidebar (expanded=240, collapsed=56)
 │           └── QStackedWidget (stretch=1) — all 18 page widgets
-└── StatusBar (QStatusBar, min 26px, set via setStatusBar)
+└── StatusBar (QStatusBar, min 26px, via setStatusBar)
 ```
 
 ### 10.1 AppHeader
 
 Components left-to-right:
-- Logo icon (packaged SVG/PNG resource — NOT an emoji character)
+- Logo icon (packaged SVG/PNG resource — NOT an emoji character).
+  Clicking the logo navigates to PageId.HOME. Tooltip: "Go to home".
 - "WhatsApp Forensicator" — 22px semibold, primary text
 - Version label — 12px muted
 - (stretch)
@@ -569,11 +619,23 @@ background + left border accent. Collapsed: 56px wide, icons only,
 tooltips on hover/selection. Group headings in sentence case, visually
 secondary to items. Scrollable when height is limited.
 
-Icons must have a safe fallback (text label) when a resource fails to
-load. Every icon must be readable in normal, hover, selected, focused,
+Icons must have a safe fallback (styled text label) when a resource fails
+to load. Every icon must be readable in normal, hover, selected, focused,
 and disabled states. Consistent icon size (tokens.icon_medium = 18px).
+Do NOT use emoji glyphs as production icons.
 
-### 10.3 StatusBar
+### 10.3 HomePage Navigation Behavior
+
+- HomePage is the startup landing page (first widget in QStackedWidget)
+- HomePage is NOT represented in the sidebar
+- When HomePage is visible, no sidebar item is shown as selected
+- The application logo/title in AppHeader navigates to PageId.HOME
+  (tooltip: "Go to home")
+- `navigate_to(PageId.HOME)` remains supported
+- Leaving and returning to HomePage preserves normal case and page state
+- No duplicate Home sidebar item
+
+### 10.4 StatusBar
 
 - Preserved as native QStatusBar (via `QMainWindow.setStatusBar()`)
 - Left: general application status text
@@ -584,10 +646,12 @@ and disabled states. Consistent icon size (tokens.icon_medium = 18px).
   any custom `addPermanentWidget()` calls
 - Minimum height 26px
 
-### 10.4 Page ID Mapping
+### 10.5 Page ID Mapping
 
-Keyed by `PageId` enum. The QStackedWidget stores a dict `dict[PageId, QWidget]`.
-Navigation signals carry `PageId` values.
+MainWindow or NavigationController maintains a `dict[PageId, QWidget]`
+whose values are registered as children of QStackedWidget. Navigation
+signals carry `PageId` values. A reverse `dict[QWidget, PageId]` is
+defined only if required by signal handlers.
 
 ---
 
@@ -603,6 +667,14 @@ Navigation signals carry `PageId` values.
 - Consistent focus, hover, pressed, disabled states via QSS
 - Danger variant does NOT auto-execute actions
 - Ghost buttons remain visible against dark surfaces
+- Constructor: `__init__(self, text: str = "", variant: str = "primary", parent=None)`
+  - `variant` replaces old `style` parameter
+  - `set_style(style)` kept as deprecated alias → translates old values:
+    - "destructive" → "danger"
+    - "warning" → "secondary"
+    - "primary" → "primary" (unchanged)
+    - "secondary" → "secondary" (unchanged)
+  - New method: `set_variant(variant)` for the new API
 
 ### 11.2 StatusBadge
 
@@ -611,9 +683,17 @@ Navigation signals carry `PageId` values.
 - Invalid status → neutral
 - Pill-style radius (tokens.radius_pill)
 - Auto-sizing according to text
-- Optional icon
 - Uses text + icon, not colour alone
-- Existing setter methods preserved via compatibility aliases
+- Icon uses packaged resources or styled text — NOT emoji glyphs
+- Constructor: `__init__(self, text: str = "", status: str = "neutral", parent=None)`
+  - `status` replaces old `badge_type` parameter
+  - `set_badge_type(badge_type)` kept as deprecated alias → maps old
+    values to new status equivalents:
+    - "verified", "parsed" → "success"
+    - "partial", "manual", "unverified" → "warning"
+    - "failed" → "error"
+    - "inferred", "unsupported", "relay", "probable_peer", "vpn_proxy" → "neutral"
+  - New method: `set_status(status)` for the new API
 
 ### 11.3 StatusBanner (was EvidenceBanner)
 
@@ -621,12 +701,14 @@ Navigation signals carry `PageId` values.
 - Dynamic property `banner_type`: verified, warning, hash_mismatch,
   unsupported, info
 - Invalid banner_type → info
-- Supports: title string, description string, optional icon, optional
-  action button
+- Supports: text string, banner type, optional action button
 - Dismissible or persistent modes
 - Multiline text via word-wrap
 - Accessible status description
-- `evidence_banner.py` re-exports as `EvidenceBanner = StatusBanner`
+- Constructor: `__init__(self, text: str = "", banner_type: str = "info", parent=None)`
+  - Identical signature to EvidenceBanner
+  - `set_text(text)` and `set_banner_type(banner_type)` preserved
+  - No signals; a simple rename with no translation needed
 
 ### 11.4 PageHeader
 
@@ -634,6 +716,8 @@ Navigation signals carry `PageId` values.
 - Title label (tokens.font_size_page_title, semibold)
 - Optional subtitle label (tokens.font_size_body, text_secondary)
 - Stretch after header content
+- Constructor: `__init__(self, title: str, subtitle: str = "", parent=None)`
+  - Identical to existing API
 - Token-based typography, no hardcoded colors
 
 ### 11.5 ContentCard
@@ -658,11 +742,15 @@ Navigation signals carry `PageId` values.
 ### 11.6 EmptyState
 
 - QWidget with centered QVBoxLayout
-- Icon label (unicode or styled)
+- Icon preference: packaged SVG/PNG. Fallback: styled text label.
+  Do NOT use emoji glyphs as production icons. Fallback must have an
+  accessible name.
 - Title label (tokens.font_size_section, semibold)
 - Optional description label (tokens.font_size_body, text_secondary)
 - Token-based spacing
 - Optional action button (NeonButton with page-specific action)
+- Constructor: `__init__(self, title: str = "No data available", description: str = "", parent=None)`
+  - Identical to existing API
 
 ### 11.7 ConfirmDialog
 
@@ -685,13 +773,58 @@ Navigation signals carry `PageId` values.
 
 ## 12. Component Compatibility Strategy
 
+### 12.1 EvidenceBanner → StatusBanner
+
+EvidenceBanner and StatusBanner share an identical constructor:
+`(text="", banner_type="info", parent=None)` and identical methods
+`set_text(text)`, `set_banner_type(banner_type)`. A simple alias
+(`EvidenceBanner = StatusBanner`) is sufficient. EvidenceBanner can be
+a subclass that delegates entirely to StatusBanner for clarity.
+
+### 12.2 NeonButton (refactored)
+
+Constructor parameter `style` is renamed to `variant`. Old callers pass
+`style` as a keyword arg; the constructor accepts both and maps:
+- `style="destructive"` → `variant="danger"`
+- `style="warning"` → `variant="secondary"`
+- `style="primary"` → `variant="primary"`
+- `style="secondary"` → `variant="secondary"`
+
+`set_style(style)` is kept as deprecated, applying the same translation.
+New method `set_variant(variant)` uses dynamic property directly.
+
+### 12.3 StatusBadge (refactored)
+
+Constructor parameter `badge_type` is renamed to `status`. Old callers
+pass `badge_type`; the constructor accepts both and maps old values:
+- `badge_type="verified"`, `badge_type="parsed"` → `status="success"`
+- `badge_type="partial"`, `badge_type="manual"`,
+  `badge_type="unverified"` → `status="warning"`
+- `badge_type="failed"` → `status="error"`
+- Other old values → `status="neutral"`
+
+`set_badge_type(badge_type)` is kept as deprecated with the same mapping.
+New method `set_status(status)` uses dynamic property directly.
+
+### 12.4 PageHeader (refactored)
+
+Constructor and API unchanged. Internal styling updated to use
+DesignTokens.
+
+### 12.5 EmptyState (refactored)
+
+Constructor and API unchanged. Internal styling updated to use
+DesignTokens. Icon uses non-emoji fallback.
+
+### Summary Table
+
 | Old Name | New Name | Compatibility |
 |----------|----------|---------------|
-| EvidenceBanner | StatusBanner | evidence_banner.py re-exports StatusBanner as EvidenceBanner |
-| NeonButton | NeonButton (refactored) | Same class name, same constructor, new variant property |
-| StatusBadge | StatusBadge (refactored) | Same class name, same constructor, new status property |
-| PageHeader | PageHeader (refactored) | Same class name, same API |
-| EmptyState | EmptyState (refactored) | Same class name, same API |
+| EvidenceBanner | StatusBanner | Alias; identical constructor and methods |
+| NeonButton | NeonButton | Same class; `style`→`variant` rename with translation |
+| StatusBadge | StatusBadge | Same class; `badge_type`→`status` rename with translation |
+| PageHeader | PageHeader | Unchanged API; token-aware internals |
+| EmptyState | EmptyState | Unchanged API; token-aware internals; non-emoji icon |
 
 All existing imports continue to work without changes.
 
@@ -714,8 +847,11 @@ Unrelated settings are never touched.
   select, logical tab order)
 - Visible focus rings (2px tokens.focus_border_width)
 - Tooltips on all collapsed sidebar items
-- Accessible names on navigation buttons
+- Accessible names on navigation buttons and header logo
 - StatusBadge uses icon + text, not colour alone
+- All icon components (AppHeader, sidebar, EmptyState, StatusBadge,
+  StatusBanner) apply the same icon policy: packaged asset or styled
+  text fallback, no emoji, accessible name required
 - Target WCAG AA contrast — verify the final rendered theme during
   implementation (see Section 15)
 - Minimum clickable height 40px
@@ -725,15 +861,25 @@ Unrelated settings are never touched.
 
 ## 15. Contrast Verification (Implementation Deliverable)
 
-Phase 1 completion report must include:
+Phase 1 completion report must include these measured pairs:
 
-- Foreground/background combinations tested (list of specific pairs:
-  text_primary on surface, text_secondary on surface, primary on
-  primary_background, etc.)
-- Calculated contrast ratios for each pair
-- Any combinations that required adjustment
-- Confirmation that status is not conveyed by colour alone (tested by
-  checking each StatusBadge/StatusBanner without colour information)
+- `text_primary` on `surface`
+- `text_secondary` on `surface`
+- `text_muted` on `surface`
+- `primary_text` on `primary`
+- `text_primary` on `sidebar_background`
+- `text_primary` on `header_background`
+- `success` / `warning` / `error` / `information` on `surface`
+- `disabled_text` on `disabled_background`
+
+Each pair reports:
+- Foreground hex, background hex
+- Calculated contrast ratio
+- WCAG AA pass/fail at normal text, large text, and UI components
+- Any adjustment made
+
+Plus a qualitative check: confirm that every StatusBadge and
+StatusBanner is readable without colour information.
 
 ---
 
@@ -768,28 +914,33 @@ NavigationItem[active="true"] { background: ... }
 
 ## 17. Implementation Order
 
-1. Audit current theme, stylesheets, imports, shared components, and
-   icon resources
-2. Audit all legacy tab-bar dependencies (see Section 27)
+1. Audit current theme, stylesheets, imports, shared components, icon
+   resources, and all legacy tab-bar dependencies (see Section 27)
+2. Create PageId enum (`src/wft/ui/pages/page_id.py`)
 3. Create DesignTokens + theme presets (dark_forensic only)
 4. Create QSS builder + ThemeManager
 5. Create layout helpers + style helpers
 6. Apply theme at startup (bootstrap integration)
-7. Refactor shared components (NeonButton, StatusBadge, StatusBanner,
-   PageHeader, EmptyState, ContentCard, ConfirmDialog)
-8. Create compatibility alias (evidence_banner.py)
-9. Build AppHeader component
-10. Build NavigationSidebar component
-11. Refactor MainWindow shell (header + sidebar + page area + status bar)
-12. Migrate all legacy tab-bar references to PageId-based navigation
-13. Remove horizontal tab bar
+7. Build the PageId-to-page-widget mapping in MainWindow
+8. Build the sidebar (NavigationSidebar + NavigationItem)
+9. Connect sidebar navigation while retaining the old tab bar
+   temporarily (parallel navigation path)
+10. Migrate `navigate_to()`, shortcuts, KPI links, HomePage links, and
+    internal page links to use PageId
+11. Verify navigation parity for all 17 sidebar pages and HomePage
+12. Remove the horizontal tab bar
+13. Search again for stale tab/index references
 14. Remove global KPI strip (preserve KPI data providers)
-15. Wire PageId mapping + navigation signals
-16. Add sidebar state persistence
-17. Verify all 17 pages accessible from sidebar + HomePage still works
-18. Run full test suite
-19. Manual responsive/scaling/contrast tests
-20. Deliver Phase 1 completion report
+15. Refactor shared components (NeonButton, StatusBadge, StatusBanner,
+    PageHeader, EmptyState, ContentCard, ConfirmDialog)
+16. Create compatibility adapters (evidence_banner.py, NeonButton
+    deprecated methods, StatusBadge deprecated methods)
+17. Build AppHeader component
+18. Refactor MainWindow shell (app header, page area, status bar)
+19. Add sidebar state persistence
+20. Run full test suite
+21. Manual responsive/scaling/contrast tests
+22. Deliver Phase 1 completion report
 
 ---
 
@@ -798,21 +949,25 @@ NavigationItem[active="true"] { background: ... }
 ### Unit Tests
 
 - DesignTokens immutability, required fields, value validation
-  (including bool, hex color, non-empty font_family, positive
+  (including bool, exact hex regex, non-empty font_family, positive
   dimensions, non-negative spacing/radii, valid font weights)
 - Theme presets: dark_forensic loads correctly
 - Invalid theme name: falls back to dark_forensic
 - Startup theme load: does NOT persist fallback
 - QSS generation: contains expected selectors, no unresolved
   placeholder tokens
-- ThemeManager: apply_theme() applies QSS, emits theme_changed
+- ThemeManager: apply_theme() applies QSS, emits theme_changed, returns
+  bool; invalid explicit name returns False without changing theme
 - QApplication safety: graceful skip if no QApplication.instance()
 - Layout helpers: margins and spacing match tokens
 - Style helper: refresh_style() and set_dynamic_property()
-- set_dynamic_property: normalization for invalid variants
-  (button → secondary, badge → neutral, banner → info)
-- NeonButton: all valid variants, invalid fallback
-- StatusBadge: all valid statuses, invalid fallback
+- set_dynamic_property: normalization, returned-value matches assigned,
+  unchanged property does NOT repolish (verify via mock or spy)
+- NeonButton: all valid variants, invalid fallback, set_style()→set_variant()
+  translation, deprecated set_style("destructive") maps to "danger"
+- StatusBadge: all valid statuses, invalid fallback,
+  set_badge_type()→set_status() mapping, deprecated set_badge_type("verified")
+  maps to "success"
 - StatusBanner: all valid banner types, invalid fallback
 - ConfirmDialog: accept, reject, destructive mode focus behavior
 - ContentCard: optional sections not created when unused
@@ -821,13 +976,16 @@ NavigationItem[active="true"] { background: ... }
 - Sidebar: state persistence round-trip
 - PageId: valid members match _page_map keys, invalid raises ValueError
 - PageId: str(PageId.DASHBOARD) == "dashboard"
-- EvidenceBanner compatibility alias
+- EvidenceBanner compatibility alias: same constructor, set_text,
+  set_banner_type all work identically
+- AppHeader: logo click emits/triggers HOME navigation
 - All 17 nav-accessible pages are reachable via PageId mapping
+- HomePage shown at startup, sidebar active state cleared on HOME
 
 ### Manual Tests
 
 - All 17 pages accessible from sidebar navigation
-- HomePage accessible at startup
+- HomePage accessible via logo click
 - Sidebar collapse/expand with state persistence
 - Header case badge updates when case is opened/closed
 - Status bar shows correct information at all widths
@@ -837,6 +995,7 @@ NavigationItem[active="true"] { background: ... }
 - Window maximize/restore
 - Existing page signals, workers, data loading unchanged
 - Old tab bar completely removed with no stale references
+- All shortcuts still work (Ctrl+N, Ctrl+I, Ctrl+F, Ctrl+R, Ctrl+L)
 
 ---
 
@@ -874,8 +1033,9 @@ NavigationItem[active="true"] { background: ... }
 5. **Phase approach over big-bang**: Each phase delivers a working,
    testable increment. Pages remain functional throughout.
 
-6. **Compatibility aliases over bulk rewrites**: Old imports keep working
-   while new code uses the new names. Zero ripple from renames.
+6. **Compatibility adapters over silent breakage**: Deprecated APIs
+   translate old values to new equivalents; no existing caller breaks
+   until the page is explicitly redesigned.
 
 7. **Native QStatusBar over custom widget**: Qt's built-in status bar
    handles resize, hiding, and styling; custom widget duplicates this
@@ -883,6 +1043,9 @@ NavigationItem[active="true"] { background: ... }
 
 8. **PageId StrEnum over string constants**: Type-safe, self-documenting,
    no scattered string literals in new code.
+
+9. **Parallel navigation during migration**: New sidebar connected
+   before old tab bar is removed; no navigation downtime.
 
 ---
 
@@ -895,26 +1058,26 @@ NavigationItem[active="true"] { background: ... }
 - `src/wft/ui/theme/qss_builder.py`
 - `src/wft/ui/theme/layout_helpers.py`
 - `src/wft/ui/theme/style_helpers.py`
+- `src/wft/ui/pages/page_id.py`
 - `src/wft/ui/components/app_header.py`
 - `src/wft/ui/components/navigation_sidebar.py`
-- `src/wft/ui/components/navigation_item.py` (internal item widget for sidebar)
+- `src/wft/ui/components/navigation_item.py`
 - `src/wft/ui/components/content_card.py`
 - `src/wft/ui/components/status_banner.py`
 - `src/wft/ui/components/confirm_dialog.py`
 
 ## 22. Files to Modify
 
-- `src/wft/ui/components/neon_button.py` — refactor to use DesignTokens
-  and dynamic variant property
-- `src/wft/ui/components/status_badge.py` — refactor to use DesignTokens
-  and dynamic status property
+- `src/wft/ui/components/neon_button.py` — refactor to use DesignTokens,
+  dynamic variant property, deprecated `set_style()` translation
+- `src/wft/ui/components/status_badge.py` — refactor to use DesignTokens,
+  dynamic status property, deprecated `set_badge_type()` translation
 - `src/wft/ui/components/page_header.py` — refactor to use DesignTokens
-- `src/wft/ui/components/empty_state.py` — refactor to use DesignTokens
+- `src/wft/ui/components/empty_state.py` — refactor to use DesignTokens,
+  replace emoji icon with packaged asset or styled text fallback
 - `src/wft/ui/components/evidence_banner.py` — convert to compatibility
-  alias importing StatusBanner
+  adapter wrapping StatusBanner (identical constructor + method delegation)
 - `src/wft/ui/components/__init__.py` — update exports
-- `src/wft/ui/components/progress_overlay.py` — token-aware sizing update
-  (button heights, spacing, colors via tokens)
 - `src/wft/ui/main_window.py` — refactor shell layout: add sidebar,
   app header, page area, status bar; remove tab bar and KPI strip
 - `src/wft/bootstrap.py` — add ThemeManager creation and startup theme
@@ -924,7 +1087,7 @@ NavigationItem[active="true"] { background: ... }
 
 ---
 
-## 23. PageId (Singleton File)
+## 23. PageId File
 
 `src/wft/ui/pages/page_id.py`:
 
@@ -962,16 +1125,18 @@ Before implementing the sidebar, audit the existing project assets:
 - Search `src/wft/ui/resources/` for SVG, PNG, ICO files
 - Search the codebase for any existing icon provider or icon lookup
 - If no icons exist, provide a clear recommendation:
-  - Use simple text labels in a styled QLabel as a fallback
+  - Use simple styled text labels as a fallback (e.g. first letter of
+    page name in a styled QLabel)
   - Or add a lightweight set of monochromatic SVG icons (recommended
     10–15 icons for sidebar groups + items)
 - Do NOT add external icon libraries without explicit justification
 
 Each sidebar entry must have:
-- A valid icon resource or styled text fallback
+- A valid icon resource or styled text fallback (NOT emoji)
 - Consistent icon size (tokens.icon_medium = 18px)
 - A tooltip in collapsed mode
 - A readable selected, hover, focused, and disabled state
+- An accessible name when the label is not visible
 
 ---
 
@@ -1001,13 +1166,15 @@ StatusBanner is readable without colour information.
 
 ## 26. ProgressOverlay Token Migration
 
-`progress_overlay.py` receives a limited token update in Phase 1:
-- Replace hardcoded `setMinimumHeight`/`setMaximumWidth` with
-  token-based dialog_minimum_width
-- Replace hardcoded spacing with apply_card_layout()
-- Replace hardcoded button minimum heights with tokens.button_height
-- Replace inline colors with generated QSS selectors where possible
-- Preserve all signals, slots, and behavior
+`progress_overlay.py` receives a limited token update in Phase 1.
+Unique existing size constraints (minimumWidth, maximumWidth,
+minimumHeight) are preserved as-is. Only these values are migrated:
+
+- Colours → generated QSS selectors where possible
+- Spacing → `apply_card_layout(tokens)`
+- Button heights → `tokens.button_height`
+- Typography → token-based font sizes
+- Border and radius → token-based values
 
 ---
 
@@ -1025,22 +1192,19 @@ entire repository for and document all uses of:
 - Raw page-index numbers (0–16) in the tab context
 - Any import or reference to QTabBar from the navigation
 
-Migration:
-1. Replace all writes to `_nav_tabs.setCurrentIndex(idx)` with
-   `_pages.setCurrentWidget(page)` + sidebar active-state update
-2. Replace `_nav_tabs.currentChanged` connection with sidebar signal
-   connection
-3. Replace `_nav_map` (dict[int, str]) with PageId-based dict
-4. Replace `_on_nav_changed(index)` with `_on_nav_changed(page_id)`
-5. Replace `_nav_items` for index lookups with direct PageId iteration
-6. Remove `_nav_tabs` attribute, its layout, and its QSS
-7. Remove the `_build_nav_bar()` method or gut it to a no-op
-8. Verify shortcuts still work (Ctrl+N→cases, Ctrl+I→evidence,
-   Ctrl+F→search, Ctrl+R→reports, Ctrl+L→lock)
-9. Verify KPI click navigation still works
-10. Verify HomePage→"Open Case" navigation still works
-11. Verify DashboardPage→"Import Evidence" navigation still works
-12. Run full test suite
+Migration (performed in this order, same as Section 17):
+
+1. Create PageId.
+2. Build the PageId-to-page-widget mapping.
+3. Build the sidebar.
+4. Connect sidebar navigation while retaining the old tab bar
+   temporarily (parallel path — both navigation methods active).
+5. Migrate `navigate_to()`, shortcuts, KPI links, HomePage links, and
+   internal page links to use PageId.
+6. Verify navigation parity for all 17 sidebar pages and HomePage.
+7. Remove the horizontal tab bar.
+8. Search again for stale tab/index references.
+9. Run navigation and full regression tests.
 
 All callers of `navigate_to()` use string keys (not indices), so the
 migration is primarily within `main_window.py`.
@@ -1071,7 +1235,8 @@ deferred from Phase 1:
 | ThemeManager at startup crashes on bad settings | Try/except with fallback to dark_forensic; fallback does NOT persist |
 | QSS generation fails | ThemeManager provides a minimal built-in flat QSS fallback |
 | KPI removal breaks something unexpected | Audit all references to KPI widget objects and `_kpi_cards` before removal |
-| EvidenceBanner rename breaks imports | Compatibility alias in evidence_banner.py; grep for all references before deleting old file |
+| EvidenceBanner rename breaks imports | Compatibility adapter in evidence_banner.py; grep for all references before deleting old file |
 | High-contrast theme causes instability | Not implemented in Phase 1; deferred |
-| Missing icon resources | Text fallback (styled label with initials) for every sidebar item |
-| Tab-bar removal breaks existing tests | Migrate all test references from tab indexing to PageId navigation |
+| Missing icon resources | Styled text fallback (initials in a coloured square) for every sidebar item |
+| Tab-bar removal breaks existing tests | Migrate all test references from tab indexing to PageId navigation; keep parallel path during migration |
+| Deprecated `style`/`badge_type` usage not caught | All 59 instantiation sites audited in design phase; adapter handles translation |
