@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QAbstractAnimation, QVariantAnimation, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 from wft.ui.pages.page_id import PageId
 from wft.ui.components.navigation_item import NavigationItem
+from wft.ui.theme.tokens import DesignTokens
 
 _GROUPS: list[tuple[str, list[tuple[str, PageId]]]] = [
     ("Case Management", [
@@ -45,14 +46,20 @@ _GROUPS: list[tuple[str, list[tuple[str, PageId]]]] = [
 class NavigationSidebar(QWidget):
     page_selected = Signal(PageId)
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, tokens: DesignTokens | None = None, parent=None) -> None:
         super().__init__(parent)
+        self._tokens = tokens or DesignTokens()
         self._is_collapsed = False
         self._items: dict[PageId, NavigationItem] = {}
         self._settings_callback = None
+        self._animation: QVariantAnimation | None = None
+
+        self._expanded_width = self._tokens.sidebar_expanded_width
+        self._collapsed_width = self._tokens.sidebar_collapsed_width
 
         self.setObjectName("NavigationSidebar")
-        self.setMinimumWidth(56)
+        self.setMinimumWidth(self._expanded_width)
+        self.setMaximumWidth(self._expanded_width)
         self.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
 
         self._outer_layout = QVBoxLayout(self)
@@ -106,14 +113,42 @@ class NavigationSidebar(QWidget):
 
     def toggle_collapse(self) -> None:
         self._is_collapsed = not self._is_collapsed
+        target = self._collapsed_width if self._is_collapsed else self._expanded_width
+
         for item in self._items.values():
             item.setVisible(not self._is_collapsed)
         for i in range(self._nav_layout.count()):
             w = self._nav_layout.itemAt(i).widget()
             if isinstance(w, QLabel) and w.objectName() == "sidebarGroupHeader":
                 w.setVisible(not self._is_collapsed)
+
+        if self._tokens.reduced_motion:
+            self.setMinimumWidth(target)
+            self.setMaximumWidth(target)
+        else:
+            self._animate_width(target)
+
         if self._settings_callback:
             self._settings_callback(self._is_collapsed)
+
+    def _animate_width(self, target: int) -> None:
+        start = self.width()
+        if start == target:
+            return
+        if self._animation is not None:
+            self._animation.stop()
+        anim = QVariantAnimation(self)
+        anim.setDuration(self._tokens.animation_duration_normal_ms)
+        anim.setStartValue(start)
+        anim.setEndValue(target)
+        anim.valueChanged.connect(lambda v: self._apply_width(v))
+        anim.finished.connect(lambda: self._apply_width(target))
+        anim.start(QAbstractAnimation.DeleteWhenStopped)
+        self._animation = anim
+
+    def _apply_width(self, w: int) -> None:
+        self.setMinimumWidth(w)
+        self.setMaximumWidth(w)
 
     def _item_count(self) -> int:
         return len(self._items)

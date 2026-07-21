@@ -1,8 +1,15 @@
 import sys
 import pytest
+from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QApplication, QWidget, QLabel
 from wft.ui.pages.page_id import PageId
 from wft.ui.components.navigation_sidebar import NavigationSidebar
+from wft.ui.theme.tokens import DesignTokens
+
+
+def _process_events():
+    for _ in range(100):
+        QCoreApplication.processEvents()
 
 
 @pytest.fixture(scope="module")
@@ -76,9 +83,29 @@ class TestNavigationSidebar:
         sidebar._collapse_btn.click()
         assert sidebar._is_collapsed
 
-    def test_sidebar_minimum_width(self, qapp):
+    def test_sidebar_expanded_width(self, qapp):
+        tokens = DesignTokens()
         sidebar = NavigationSidebar()
-        assert sidebar.minimumWidth() == 56
+        assert sidebar.minimumWidth() == tokens.sidebar_expanded_width == 240
+        assert sidebar.maximumWidth() == tokens.sidebar_expanded_width == 240
+
+    def test_sidebar_collapsed_width(self, qapp):
+        tokens = DesignTokens(reduced_motion=True)
+        sidebar = NavigationSidebar(tokens)
+        sidebar.toggle_collapse()
+        _process_events()
+        assert sidebar.minimumWidth() == tokens.sidebar_collapsed_width == 56
+        assert sidebar.maximumWidth() == tokens.sidebar_collapsed_width == 56
+
+    def test_expand_after_collapse_restores_width(self, qapp):
+        tokens = DesignTokens(reduced_motion=True)
+        sidebar = NavigationSidebar(tokens)
+        sidebar.toggle_collapse()
+        _process_events()
+        assert sidebar.minimumWidth() == tokens.sidebar_collapsed_width
+        sidebar.toggle_collapse()
+        _process_events()
+        assert sidebar.minimumWidth() == tokens.sidebar_expanded_width
 
     def test_is_collapsed_property(self, qapp):
         sidebar = NavigationSidebar()

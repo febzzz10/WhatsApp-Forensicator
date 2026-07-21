@@ -77,6 +77,7 @@ class MainWindow(QMainWindow):
         content.addWidget(self._sidebar)
 
         self._pages = QStackedWidget()
+        self._pages.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._build_page_area()
         content.addWidget(self._pages, 1)
 

@@ -400,6 +400,10 @@ QLabel#mutedLabel {{
     font-size: {_c(tokens, "font_size_body")}px;
     color: {_c(tokens, "text_muted")};
 }}
+QLabel#formLabel {{
+    font-size: {_c(tokens, "font_size_label")}px;
+    color: {_c(tokens, "text_secondary")};
+}}
 StatusBadge[status="success"] {{
     color: {_c(tokens, "success")};
 }}
