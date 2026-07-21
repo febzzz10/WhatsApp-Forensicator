@@ -170,6 +170,25 @@ AppHeader {{
     border-bottom: {_c(tokens, "border_width")}px solid {_c(tokens, "border")};
     min-height: {_c(tokens, "header_height")}px;
 }}
+QLabel#sidebarGroupHeader {{
+    color: {_c(tokens, "text_muted")};
+    font-size: {_c(tokens, "font_size_caption")}px;
+    font-weight: {_c(tokens, "font_weight_medium")};
+    padding: {_c(tokens, "space_8")}px {_c(tokens, "space_12")}px {_c(tokens, "space_4")}px;
+}}
+QPushButton#sidebarCollapseBtn {{
+    background: transparent;
+    color: {_c(tokens, "text_secondary")};
+    border: none;
+    border-radius: {_c(tokens, "radius_small")}px;
+    min-height: {_c(tokens, "compact_button_height")}px;
+    font-size: {_c(tokens, "font_size_section")}px;
+    padding: 0 {_c(tokens, "space_12")}px;
+}}
+QPushButton#sidebarCollapseBtn:hover {{
+    color: {_c(tokens, "text_primary")};
+    background-color: {_c(tokens, "surface_hover")};
+}}
 """
 
 
