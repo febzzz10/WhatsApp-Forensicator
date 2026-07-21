@@ -170,6 +170,38 @@ AppHeader {{
     border-bottom: {_c(tokens, "border_width")}px solid {_c(tokens, "border")};
     min-height: {_c(tokens, "header_height")}px;
 }}
+QPushButton#headerLogo {{
+    background-color: {_c(tokens, "primary")};
+    color: {_c(tokens, "primary_text")};
+    border: none;
+    border-radius: {_c(tokens, "radius_small")}px;
+    font-weight: {_c(tokens, "font_weight_bold")};
+    font-size: {_c(tokens, "font_size_label")}px;
+}}
+QPushButton#headerLogo:hover {{
+    background-color: {_c(tokens, "primary_hover")};
+}}
+QLabel#headerTitle {{
+    font-size: {_c(tokens, "font_size_app_title")}px;
+    font-weight: {_c(tokens, "font_weight_semibold")};
+    color: {_c(tokens, "text_primary")};
+}}
+QLabel#headerVersion {{
+    font-size: {_c(tokens, "font_size_caption")}px;
+    color: {_c(tokens, "text_muted")};
+}}
+QLabel#headerCaseBadge {{
+    font-size: {_c(tokens, "font_size_caption")}px;
+    color: {_c(tokens, "success")};
+    padding: 2px 8px;
+    border: {_c(tokens, "border_width")}px solid {_c(tokens, "success")};
+    border-radius: {_c(tokens, "radius_small")}px;
+}}
+QLabel#headerCaseName {{
+    font-size: {_c(tokens, "font_size_label")}px;
+    color: {_c(tokens, "text_secondary")};
+    padding-left: {_c(tokens, "space_4")}px;
+}}
 QLabel#sidebarGroupHeader {{
     color: {_c(tokens, "text_muted")};
     font-size: {_c(tokens, "font_size_caption")}px;

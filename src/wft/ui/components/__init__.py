@@ -10,6 +10,7 @@ from wft.ui.components.content_card import ContentCard
 from wft.ui.components.confirm_dialog import ConfirmDialog
 from wft.ui.components.navigation_item import NavigationItem
 from wft.ui.components.navigation_sidebar import NavigationSidebar
+from wft.ui.components.app_header import AppHeader
 
 __all__ = [
     "NeonButton",
@@ -24,4 +25,5 @@ __all__ = [
     "ConfirmDialog",
     "NavigationItem",
     "NavigationSidebar",
+    "AppHeader",
 ]
