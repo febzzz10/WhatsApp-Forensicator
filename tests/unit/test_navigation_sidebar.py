@@ -85,3 +85,14 @@ class TestNavigationSidebar:
         assert sidebar.is_collapsed is False
         sidebar.toggle_collapse()
         assert sidebar.is_collapsed is True
+
+    def test_persistence_callback_fires(self, qapp):
+        sidebar = NavigationSidebar()
+        results = []
+        sidebar.set_persistence_callback(lambda collapsed: results.append(collapsed))
+        sidebar.toggle_collapse()
+        assert len(results) == 1
+        assert results[0] is True
+        sidebar.toggle_collapse()
+        assert len(results) == 2
+        assert results[1] is False

@@ -49,6 +49,7 @@ class NavigationSidebar(QWidget):
         super().__init__(parent)
         self._is_collapsed = False
         self._items: dict[PageId, NavigationItem] = {}
+        self._settings_callback = None
 
         self.setObjectName("NavigationSidebar")
         self.setMinimumWidth(56)
@@ -100,6 +101,9 @@ class NavigationSidebar(QWidget):
         for pid, item in self._items.items():
             item.set_active(pid == page_id)
 
+    def set_persistence_callback(self, callback) -> None:
+        self._settings_callback = callback
+
     def toggle_collapse(self) -> None:
         self._is_collapsed = not self._is_collapsed
         for item in self._items.values():
@@ -108,6 +112,8 @@ class NavigationSidebar(QWidget):
             w = self._nav_layout.itemAt(i).widget()
             if isinstance(w, QLabel) and w.objectName() == "sidebarGroupHeader":
                 w.setVisible(not self._is_collapsed)
+        if self._settings_callback:
+            self._settings_callback(self._is_collapsed)
 
     def _item_count(self) -> int:
         return len(self._items)

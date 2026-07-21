@@ -69,6 +69,11 @@ class MainWindow(QMainWindow):
 
         self._sidebar = NavigationSidebar()
         self._sidebar.page_selected.connect(self._on_sidebar_nav)
+        self._sidebar.set_persistence_callback(
+            lambda collapsed: self._container.settings.set(
+                "ui", "sidebar_expanded", not collapsed,
+            )
+        )
         content.addWidget(self._sidebar)
 
         self._pages = QStackedWidget()
