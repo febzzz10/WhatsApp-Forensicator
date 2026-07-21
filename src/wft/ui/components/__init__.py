@@ -6,6 +6,7 @@ from wft.ui.components.evidence_banner import EvidenceBanner
 from wft.ui.components.progress_overlay import ProgressOverlay
 from wft.ui.components.empty_state import EmptyState
 from wft.ui.components.error_panel import ErrorPanel
+from wft.ui.components.content_card import ContentCard
 
 __all__ = [
     "NeonButton",
@@ -16,4 +17,5 @@ __all__ = [
     "ProgressOverlay",
     "EmptyState",
     "ErrorPanel",
+    "ContentCard",
 ]
