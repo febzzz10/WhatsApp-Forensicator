@@ -50,6 +50,12 @@ class AdbSettings:
 
 
 @dataclass
+class UiSettings:
+    theme: str = "dark_forensic"
+    sidebar_expanded: bool = True
+
+
+@dataclass
 class AppSettings:
     security: SecuritySettings = field(default_factory=SecuritySettings)
     hashing: HashingSettings = field(default_factory=HashingSettings)
@@ -57,10 +63,21 @@ class AppSettings:
     network: NetworkSettings = field(default_factory=NetworkSettings)
     reports: ReportSettings = field(default_factory=ReportSettings)
     adb: AdbSettings = field(default_factory=AdbSettings)
+    ui: UiSettings = field(default_factory=UiSettings)
 
     data_dir: str = ""
     default_case_dir: str = ""
     log_level: str = "INFO"
+
+    def get(self, section: str, key: str) -> object:
+        if section == "ui":
+            return getattr(self.ui, key, None)
+        return None
+
+    def set(self, section: str, key: str, value: object) -> None:
+        if section == "ui":
+            if hasattr(self.ui, key):
+                setattr(self.ui, key, value)
 
     @classmethod
     def load(cls, path: Path) -> "AppSettings":
@@ -99,6 +116,10 @@ class AppSettings:
         s.adb.adb_path = a.get("adb_path", "")
         s.adb.auto_detect = a.get("auto_detect", True)
         s.adb.poll_interval_seconds = max(2, min(30, a.get("poll_interval_seconds", 3)))
+
+        u = data.get("ui", {})
+        s.ui.theme = u.get("theme", "dark_forensic")
+        s.ui.sidebar_expanded = u.get("sidebar_expanded", True)
 
         s.data_dir = data.get("data_dir", "")
         s.default_case_dir = data.get("default_case_dir", "")

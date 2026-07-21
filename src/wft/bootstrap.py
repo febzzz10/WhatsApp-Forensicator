@@ -14,6 +14,7 @@ from wft.application.services.statistics_service import StatisticsService
 from wft.application.services.search_service import SearchService
 from wft.application.services.recovery_service import RecoveryService
 from wft.application.services.adb_service import AdbService
+from wft.ui.theme.theme_manager import ThemeManager
 
 
 class Container:
@@ -46,5 +47,8 @@ class Container:
         self.adb_service = AdbService(
             configured_path=self.settings.adb.adb_path if self.settings.adb.adb_path else None
         )
+
+        self.theme_manager = ThemeManager(settings=self.settings)
+        self.theme_manager.load_saved_theme()
 
         self.log.info("Application container initialised")
