@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whatsapp-forensic-toolkit"
+version = "1.0.0a1"
+description = "Offline-first digital-forensics application for acquiring, preserving, parsing, analysing and reporting WhatsApp-related evidence."
+license = {text = "Proprietary"}
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.6",
+    "cryptography>=41.0",
+    "jinja2>=3.1",
+    "python-magic>=0.4",
+    "Pillow>=10.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+pdf = ["weasyprint>=60", "reportlab>=4.0"]
+network = ["scapy>=2.5"]
+geoip = ["maxminddb>=2.4"]
+yara = ["yara-python>=4.3"]
+exif = ["ExifRead>=3.0"]
+dev = [
+    "pytest>=7.4",
+    "pytest-qt>=4.2",
+    "black>=23.0",
+    "ruff>=0.1",
+    "mypy>=1.5",
+]
+
+[project.scripts]
+wft = "wft.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["wft*"]
+
+[tool.setuptools.package-data]
+wft = ["**/*.html", "**/*.css", "**/*.svg", "**/*.png"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+    "slow: marks tests as slow",
+    "security: security tests",
+    "integration: integration tests",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
