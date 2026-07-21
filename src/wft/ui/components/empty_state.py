@@ -14,20 +14,20 @@ class EmptyState(QWidget):
         layout.setAlignment(Qt.AlignCenter)
         layout.setSpacing(8)
 
-        icon = QLabel("\u24D8")
-        icon.setStyleSheet("color: #6E9278; font-size: 32px;")
-        icon.setAlignment(Qt.AlignCenter)
-        layout.addWidget(icon)
+        self._icon = QLabel("\u24D8")
+        self._icon.setObjectName("emptyStateIcon")
+        self._icon.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._icon)
 
         self._title = QLabel(title)
-        self._title.setStyleSheet("color: #A9C7B2; font-size: 16px; font-weight: 600;")
+        self._title.setObjectName("emptyStateTitle")
         self._title.setAlignment(Qt.AlignCenter)
         self._title.setWordWrap(True)
         layout.addWidget(self._title)
 
         if description:
             self._desc = QLabel(description)
-            self._desc.setStyleSheet("color: #6E9278; font-size: 13px;")
+            self._desc.setObjectName("emptyStateDescription")
             self._desc.setAlignment(Qt.AlignCenter)
             self._desc.setWordWrap(True)
             layout.addWidget(self._desc)

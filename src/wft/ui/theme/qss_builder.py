@@ -308,6 +308,29 @@ QStatusBar::item {{
 QLabel {{
     color: {_c(tokens, "text_primary")};
 }}
+QLabel#pageTitle {{
+    font-size: {_c(tokens, "font_size_page_title")}px;
+    font-weight: {_c(tokens, "font_weight_bold")};
+    color: {_c(tokens, "text_primary")};
+}}
+QLabel#subtitleLabel {{
+    font-size: {_c(tokens, "font_size_body")}px;
+    color: {_c(tokens, "text_secondary")};
+    margin-left: {_c(tokens, "space_8")}px;
+}}
+QLabel#emptyStateIcon {{
+    color: {_c(tokens, "text_muted")};
+    font-size: 32px;
+}}
+QLabel#emptyStateTitle {{
+    color: {_c(tokens, "text_secondary")};
+    font-size: 16px;
+    font-weight: {_c(tokens, "font_weight_semibold")};
+}}
+QLabel#emptyStateDescription {{
+    color: {_c(tokens, "text_muted")};
+    font-size: {_c(tokens, "font_size_body")}px;
+}}
 StatusBadge[status="success"] {{
     color: {_c(tokens, "success")};
 }}

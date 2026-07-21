@@ -12,11 +12,18 @@ class PageHeader(QWidget):
         layout.addWidget(self._title)
 
         if subtitle:
-            sub = QLabel(subtitle)
-            sub.setObjectName("subtitleLabel")
-            layout.addWidget(sub)
+            self._subtitle = QLabel(subtitle)
+            self._subtitle.setObjectName("subtitleLabel")
+            layout.addWidget(self._subtitle)
 
         layout.addStretch()
 
     def set_title(self, title: str) -> None:
         self._title.setText(title)
+
+    def set_subtitle(self, subtitle: str) -> None:
+        if not hasattr(self, "_subtitle"):
+            self._subtitle = QLabel(subtitle)
+            self._subtitle.setObjectName("subtitleLabel")
+            self.layout().insertWidget(1, self._subtitle)
+        self._subtitle.setText(subtitle)

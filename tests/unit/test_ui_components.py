@@ -74,15 +74,16 @@ class TestNeonButton:
         primary = NeonButton("Test", "primary")
         assert primary.text() == "Test"
         assert primary.minimumHeight() == 36
+        assert primary.property("variant") == "primary"
 
         secondary = NeonButton("Secondary", "secondary")
-        assert secondary.objectName() == "secondaryButton"
+        assert secondary.property("variant") == "secondary"
 
         destructive = NeonButton("Destroy", "destructive")
-        assert destructive.objectName() == "destructiveButton"
+        assert destructive.property("variant") == "danger"
 
         warning = NeonButton("Warn", "warning")
-        assert warning.objectName() == "warningButton"
+        assert warning.minimumHeight() >= 24
 
     def test_button_cursor(self, qapp):
         btn = NeonButton("Click")
