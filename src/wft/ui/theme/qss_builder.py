@@ -391,6 +391,15 @@ QLabel#contentCardSubtitle {{
     font-size: {_c(tokens, "font_size_body")}px;
     color: {_c(tokens, "text_secondary")};
 }}
+QLabel#sectionTitle {{
+    font-size: {_c(tokens, "font_size_section")}px;
+    font-weight: {_c(tokens, "font_weight_semibold")};
+    color: {_c(tokens, "text_primary")};
+}}
+QLabel#mutedLabel {{
+    font-size: {_c(tokens, "font_size_body")}px;
+    color: {_c(tokens, "text_muted")};
+}}
 StatusBadge[status="success"] {{
     color: {_c(tokens, "success")};
 }}

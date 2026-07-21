@@ -1,8 +1,11 @@
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QProgressBar, QPushButton, QTextEdit, QApplication,
+    QProgressBar, QTextEdit, QApplication,
 )
+from wft.ui.theme.tokens import DesignTokens
+from wft.ui.theme.layout_helpers import apply_card_layout
+from wft.ui.components.neon_button import NeonButton
 
 
 class ProgressOverlay(QDialog):
@@ -19,7 +22,8 @@ class ProgressOverlay(QDialog):
         )
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
+        tokens = DesignTokens()
+        apply_card_layout(layout, tokens)
 
         self._operation = QLabel(title)
         self._operation.setObjectName("sectionTitle")
@@ -48,8 +52,7 @@ class ProgressOverlay(QDialog):
         self._details.setObjectName("mutedLabel")
         layout.addWidget(self._details)
 
-        self._cancel_btn = QPushButton("Cancel")
-        self._cancel_btn.setObjectName("destructiveButton")
+        self._cancel_btn = NeonButton("Cancel", "danger")
         self._cancel_btn.clicked.connect(self._on_cancel)
         layout.addWidget(self._cancel_btn, alignment=Qt.AlignRight)
 
