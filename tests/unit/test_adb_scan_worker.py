@@ -259,3 +259,51 @@ def test_device_details_worker(mock_service_factory):
     assert data.serial == "TEST001"
     assert data.model == "Pixel 9"
     service.get_device_details.assert_called_once_with("TEST001", timeout=10)
+
+def test_record_device_metadata_writes_under_case_dir_not_store_root(
+    mock_service_factory, tmp_path
+):
+    from wft.infrastructure.hashing.hashing_service import HashingService
+    from wft.infrastructure.filesystem.file_store import FileStore
+    from wft.application.services.case_service import CaseService
+    from wft.infrastructure.logging.logging_service import LoggingService
+    from wft.application.services.evidence_service import EvidenceService
+
+    service = mock_service_factory()
+    service.get_device_details.return_value = AdbDevice(
+        serial="TEST001", state=AdbState.CONNECTED, model="Pixel 9"
+    )
+
+    case_service = CaseService(HashingService(), LoggingService(None, "CRITICAL"))
+    created = case_service.create_case(
+        case_dir=tmp_path / "cases",
+        case_code="CASE-META",
+        title="Metadata path test",
+        examiner_name="Tester",
+        organisation="Lab",
+    )
+    case_path = Path(created["path"])
+    store_root = tmp_path / "other_store"
+
+    worker = AdbOperationWorker(
+        operation=AdbOperationType.RECORD_DEVICE_METADATA,
+        serial="TEST001",
+        timeout=10,
+        _service_override=service,
+        case_dir=case_path,
+        db_path=case_path / "case.db",
+        hash_service=HashingService(),
+        file_store=FileStore(store_root, HashingService()),
+        evidence_service=MagicMock(spec=EvidenceService),
+        case_id=created["case_id"],
+    )
+    finished_called = []
+    error_called = []
+    worker.signals.finished.connect(lambda r: finished_called.append(r))
+    worker.signals.error.connect(lambda m: error_called.append(m))
+    worker.run()
+
+    assert error_called == []
+    result = finished_called[0]
+    assert (case_path / result.artifact_path).is_file()
+    assert not list(store_root.rglob("device_metadata_*.json"))

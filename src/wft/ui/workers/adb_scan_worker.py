@@ -184,12 +184,12 @@ class AdbOperationWorker(QRunnable):
         ts = _now_utc().replace(":", "-").replace("Z", "")
         rel_dir = "derived/metadata"
         rel_path = "{}/device_metadata_{}_{}.json".format(rel_dir, ts, self._serial[:8])
-        if self._file_store:
-            dest = self._file_store.resolve(rel_path)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-        else:
-            dest = self._case_dir / rel_path
-            dest.parent.mkdir(parents=True, exist_ok=True)
+        # The DB row records stored_relative_path as case-relative, and the
+        # preconditions above guarantee case_dir is set, so always write under
+        # the case directory (the container file store is rooted at the app
+        # data directory and would orphan the artifact).
+        dest = Path(self._case_dir) / rel_path
+        dest.parent.mkdir(parents=True, exist_ok=True)
 
         self.signals.progress.emit("Writing metadata artifact...", 60, 100)
         dest.write_text(content, encoding="utf-8")
@@ -540,11 +540,13 @@ class AdbOperationWorker(QRunnable):
                     "Hashing failed for {}: {}".format(remote_path, exc)
                 )
 
-            if self._file_store:
-                try:
-                    self._file_store.set_read_only(local_rel)
-                except OSError:
-                    pass
+            # chmod the actual case-local file: the container file store is
+            # rooted at the app data directory, not the case, so it cannot
+            # be used to protect this original.
+            try:
+                local_path.chmod(0o444)
+            except OSError:
+                pass
 
             artifacts.append(
                 WhatsAppDatabaseArtifact(
