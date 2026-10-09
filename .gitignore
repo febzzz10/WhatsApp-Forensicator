@@ -20,5 +20,8 @@ Thumbs.db
 *.db-journal
 *.db-wal
 
+# Forensic case directories (must never be committed)
+case.toml
+
 # Local agent tooling
 .opencode/

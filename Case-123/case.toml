@@ -1,8 +1,0 @@
-case_id = "Case-123"
-title = "Febin"
-examiner = "Febin baiju"
-organisation = ""
-created_utc = "2026-07-20T15:20:38.847265Z"
-display_timezone = "UTC"
-case_encryption_enabled = false
-external_services_enabled = false
