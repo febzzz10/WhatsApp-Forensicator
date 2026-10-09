@@ -15,6 +15,7 @@ dependencies = [
     "python-magic>=0.4",
     "Pillow>=10.0",
     "pydantic>=2.0",
+    "tomli-w>=1.0",
 ]
 
 [project.optional-dependencies]

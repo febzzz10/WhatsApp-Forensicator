@@ -19,7 +19,7 @@ Before every task:
 - **Purpose:** Offline-first desktop forensic application for acquiring, preserving, parsing, analysing and reporting WhatsApp-related digital evidence through lawful and authorised workflows.
 - **Target users:** Authorised forensic examiners, cybersecurity analysts, incident responders, supervised students.
 - **Current status:** Alpha (v1.0.0a1) — core case/evidence/parse/audit/report loop works. ADB extraction and backup decryption are placeholders.
-- **Main features:** Create/open forensic cases, import evidence (text exports, ZIP archives, SQLite databases), hash-verify evidence, parse artefacts (messages, contacts, groups, calls, media), hash-chained audit trail, multi-scope search, HTML report generation, dark-neon and high-contrast themes, recovery candidate review, timeline viewer.
+- **Main features:** Create/open forensic cases, import evidence (text exports, ZIP archives, SQLite databases), hash-verify evidence, parse artefacts (messages, contacts, groups, calls, media), hash-chained audit trail, multi-scope search, HTML report generation, token-built dark theme, recovery candidate review, timeline viewer.
 
 ## 2. Technology Stack
 
@@ -105,7 +105,7 @@ whatsapp-forensic-toolkit/
 │       │   ├── main_window.py        # MainWindow — header, KPI strip, nav tabs, 18 pages
 │       │   ├── components/           # NeonButton, StatusBadge, StatisticCard, PageHeader, EvidenceBanner, EmptyState, ErrorPanel, ProgressOverlay
 │       │   ├── pages/                # 18 page widgets (see below)
-│       │   ├── themes/               # dark_neon.qss, high_contrast.qss, tokens.py, theme_manager.py
+│       │   ├── theme/                # DesignTokens, qss_builder, ThemeManager, layout/style helpers
 │       │   ├── workers/              # CancellationToken, BackgroundWorker, WorkerSignals, ParseEvidenceWorker, BatchImportWorker
 │       │   ├── widgets/              # (empty)
 │       │   ├── dialogs/              # (empty)
@@ -130,7 +130,7 @@ whatsapp-forensic-toolkit/
     │   ├── test_schema_fingerprinter.py  # Schema detection + registry (8 tests)
     │   ├── test_text_export_parser.py    # TextExportParser (4 tests)
     │   ├── test_structured_parser.py     # Structured parse output, SQLite adapter, ZIP (8 tests)
-    │   └── test_ui_components.py     # UI components, nav, themes (32 tests)
+    │   └── test_ui_components.py     # UI components, nav (22 tests)
     └── integration/                  # (empty)
 ```
 
@@ -256,11 +256,11 @@ Files stored in case directory: `originals/`, `working/`, `derived/`, `reports/`
 
 ### Design System
 
-- **Theme:** Dark neon (default), High Contrast (alternative), Reduced Glow (listed but no QSS file).
-- **Primary color:** `#00F56A` (green). Background: `#020703`. Text: `#EAF7EE`.
-- **Color tokens** defined in `wft/ui/themes/tokens.py` (frozen dataclass `ColorTokens`).
-- **QSS files:** `dark_neon.qss`, `high_contrast.qss` in `wft/ui/themes/`.
-- **ThemeManager** applies QSS and swaps tokens. Signal `theme_changed(str)`.
+- **Theme:** Dark forensic (default, token-built). High Contrast is spec-deferred, not implemented.
+- **Primary color:** `#00C853` (green). Background: `#020703`. Text: `#EAF7EE`.
+- **Color tokens** defined in `wft/ui/theme/tokens.py` (frozen dataclass `DesignTokens`).
+- **QSS** is generated from tokens by `wft/ui/theme/qss_builder.py` (`build_full_qss`); there are NO static .qss files.
+- **ThemeManager** (`wft/ui/theme/theme_manager.py`) applies generated QSS and swaps tokens. Signal `theme_changed(str)`. Applied at startup by `Container.__init__` via `load_saved_theme()`.
 - **Window:** 1366x768 default, 1024x600 minimum.
 - **App title:** "WHATSAPP FORENSICATOR" (all caps).
 - **Status bar:** Shows case code, integrity, UTC, version, "OFFLINE MODE".
@@ -287,9 +287,8 @@ Files stored in case directory: `originals/`, `working/`, `derived/`, `reports/`
 
 ### Accessibility and Responsiveness
 
-- Reduced motion setting available via `ThemeManager.set_reduced_motion(True)`.
-- High-contrast theme for accessibility.
-- Minimum window size: 1024x600.
+- Reduced motion available as `DesignTokens.reduced_motion` (consumed by `NavigationSidebar`); no runtime toggle API yet.
+- Minimum window size: 1024x600. (High-contrast theme is spec-deferred, not implemented.)
 
 ## 7. Important Business Logic
 
@@ -365,9 +364,9 @@ python -m pytest tests/ -v --tb=short -k "test_name"  # single test
 
 - `pyproject.toml` configures pytest: `testpaths = ["tests"]`, `python_files = ["test_*.py"]`.
 - Markers: `slow`, `security`, `integration`.
-- No conftest.py — global `qapp` fixture is in `test_ui_components.py` (session-scoped QApplication).
+- Shared `tests/conftest.py` provides one session-scoped `qapp` fixture.
 
-### Current Coverage (133 tests)
+### Current Coverage (409 tests)
 
 | Test file | Tests | What it covers |
 |-----------|-------|----------------|
@@ -378,7 +377,7 @@ python -m pytest tests/ -v --tb=short -k "test_name"  # single test
 | `test_schema_fingerprinter.py` | 8 | Fingerprint capture, determinism, empty DB, registry/match |
 | `test_text_export_parser.py` | 4 | Inspect valid/invalid, parse count, capabilities |
 | `test_structured_parser.py` | 8 | Structured output, direction, system events, media refs, timestamps, adapters |
-| `test_ui_components.py` | 32 | Color tokens, theme manager, all 8 components, cancellation token, nav, QSS files |
+| `test_ui_components.py` | 22 | All 8 components, cancellation token, nav |
 | `test_active_case_context.py` | 10 | ActiveCaseContext state, open/close, signal emission, error handling |
 | `test_statistics_service.py` | 8 | Empty/populated stats, isolation, call/media/audit/recovery KPIs |
 | `test_search_service.py` | 11 | All 7 scopes, date filter, isolation, special chars, FTS5+LIKE |
@@ -453,9 +452,6 @@ Note: `tomli_w` is imported by `case_service.py` but NOT listed in `pyproject.to
 
 ### Issues
 
-1. **tomli_w missing from pyproject.toml** — `case_service.py` imports `tomli_w` but it's not in `[project.dependencies]`. Currently works because it's likely pre-installed in the environment.
-2. **reduced_glow QSS file missing** — Listed in `ThemeManager.THEMES` but no `reduced_glow.qss` file exists.
-3. **No `conftest.py`** — the `qapp` fixture is duplicated per-test file pattern and sits inside `test_ui_components.py` rather than a shared conftest.
 
 ### Performance Concerns
 
@@ -475,7 +471,7 @@ Note: `tomli_w` is imported by `case_service.py` but NOT listed in `pyproject.to
 
 ### Technical Debt
 
-- `ui/workers/` — `ParseEvidenceWorker` and `BatchImportWorker` are synchronous (not QThread-based). They should use `BackgroundWorker` or QThread for non-blocking UI during long parses.
+- `ui/workers/` — legacy synchronous worker APIs remain for scripts/tests; `EvidencePage` uses `EvidenceImportWorker` and `EvidenceParseWorker` through `QThreadPool`.
 - `_create_test_db()` turns off foreign keys — should use proper migration.
 
 ## 11. Completed Decisions
@@ -499,11 +495,8 @@ Note: `tomli_w` is imported by `case_service.py` but NOT listed in `pyproject.to
 
 ### Medium Priority
 
-2. Create `reduced_glow.qss` or remove it from `ThemeManager.THEMES`.
-3. Port `ParseEvidenceWorker` and `BatchImportWorker` to use QThread/QRunnable for non-blocking UI.
-4. Move `qapp` fixture to `tests/conftest.py`.
-5. Build actual `packaging/` scripts (PyInstaller spec, NSIS installer, etc.).
-6. Write integration tests for E2E workflow (scripts/run_e2e_demo.py exists).
+2. Build actual `packaging/` scripts (PyInstaller spec, NSIS installer, etc.).
+3. Write integration tests for E2E workflow (scripts/run_e2e_demo.py exists).
 
 ### Low Priority
 
@@ -627,3 +620,49 @@ Note: `tomli_w` is imported by `case_service.py` but NOT listed in `pyproject.to
 - **Files affected:** `ui/utils/font_utils.py` (new), `ui/utils/__init__.py` (new), `ui/main_window.py` (async navigation + KPI), `ui/pages/adb_extractor_page.py` (QPlainTextEdit + imported font_utils), `ui/workers/adb_scan_worker.py` (_service_override param), `ui/workers/__init__.py` (updated exports), `tests/unit/test_adb_scan_worker.py` (rewritten).
 - **Verification:** All 222 tests pass (197 existing + 25 updated).
 - **Important follow-up:** Remaining pages (14/16 with on_activated) still run synchronous work. Full async page activation planned for next phase.
+
+### 2026-09-18 (End-to-End Audit)
+- Fixed evidence import registration ordering so imports no longer fail before the evidence row exists.
+- Fixed evidence-page and worker parse flows to use verified case-stored copies and actual evidence-file IDs.
+- Committed parser evidence-state updates on success and failure paths.
+- Hardened case-relative and ZIP extraction path checks against prefix escapes, backslash traversal, and symlink entries.
+- Declared `tomli-w` as a runtime dependency in `pyproject.toml`.
+- Verification: full suite 408 passed; E2E demo 27/27 passed; `compileall` passed. `ruff` and `mypy` were unavailable in the environment.
+- Remaining limitations: ADB hardware validation requires an authorized device.
+
+### 2026-09-18 (Async Evidence UI and Test Infrastructure)
+- Evidence-page import and manual/automatic parse now run through `QThreadPool` QRunnable workers with queued Qt signals for progress, completion, cancellation, and errors.
+- Workers create their own `UnitOfWork`/SQLite connections and parse only the verified case-local copy using the actual `evidence_files.id`.
+- Active evidence operations reject duplicates, support cancellation, and are invalidated when the active case changes or the page closes.
+- Added `reduced_glow.qss` and made missing theme resources fail clearly instead of silently falling back.
+- Centralized the QApplication fixture in `tests/conftest.py` and removed duplicate per-module fixtures.
+- Fixed sidebar animation cleanup to disconnect the exact connected slots; the previous PySide signal-disconnect warnings no longer occur.
+- Verification: full suite 418 passed with 1 pytest-asyncio deprecation warning; E2E demo 27/27 passed; `compileall` and `git diff --check` passed.
+- Remaining limitations: legacy synchronous worker APIs remain for non-UI callers; ADB hardware validation requires an authorized device; `ruff` and `mypy` availability remains environment-dependent.
+
+### 2026-09-18 (Asynchronous Directory Evidence Import)
+- Directory sources selected on the Evidence page now use the existing `QThreadPool`/`QRunnable` import path.
+- One logical evidence item is created per directory and one `evidence_files`/hash record per safe regular file, preserving relative paths and actual file IDs.
+- Directory traversal rejects symlinks/reparse points, resolves containment with `commonpath`, rejects sources inside the active case, and never modifies source files.
+- Cancellation and partial/unsupported directory results remain durable and cannot be reported as fully verified imports.
+- Verification: targeted directory tests passed; full suite and E2E verification recorded after implementation.
+
+### 2026-09-18 (Directory Import Production Hardening)
+- Fixed directory-parse cancellation so a cancellation requested during parser inspection durably marks the evidence item `FAILED` and never reports successful completion.
+- Fixed worker transaction lifetime so directory import registration commits before directory parsing begins, avoiding nested SQLite UnitOfWork usage.
+- Made directory progress monotonic across copy and parse phases.
+- Verification: full suite 418 passed with 1 pytest-asyncio deprecation warning; E2E demo 27/27 passed; compileall and git diff --check passed.
+- Remaining limitations: ruff and mypy are unavailable; external code-review agents are unavailable; ADB hardware validation still requires an authorized device.
+
+### 2026-10-08 (Legacy Theme System Removal)
+- Change: Deleted the entire legacy theme system (`src/wft/ui/themes/`: old `ColorTokens`, old `ThemeManager`, and the 3 static `.qss` files). The surviving token system (`src/wft/ui/theme/`: `DesignTokens` + `qss_builder.py` + `ThemeManager`) is now the only implementation. `main.py` no longer pre-applies a stylesheet — `Container.__init__` applies the built QSS via `load_saved_theme()`. Removed the unused `MainWindow.set_theme_manager()` hook and repointed `wft.ui` package exports to the new classes (`ThemeManager`, `DesignTokens`). Removed the 10 tests that locked the legacy system in place (`TestColorTokens`, `TestThemeManager`, `TestThemeQSS` in `test_ui_components.py`; `test_reduced_glow_theme_resource_exists` in `test_evidence_async.py`) and added one wiring test asserting the `wft.ui` exports resolve to the new classes.
+- Reason: architecture-scan found two full theme systems; the old one applied `dark_neon.qss` at `main.py:49`, which was immediately overwritten by `bootstrap.py:52` — dead at runtime, with drifting token definitions (`ColorTokens` vs `DesignTokens`) and 10 tests locking it in.
+- Verification: full suite 409 passed (418 − 10 legacy + 1 wiring); E2E demo 27/27; `python -c "import wft.main"` clean. Work executed on branch `refactor/remove-legacy-theme-system` per the plan at `docs/superpowers/plans/2026-10-08-remove-legacy-theme-system.md`.
+- Deviations from spec: `docs/superpowers/specs/2026-07-21-phase1-ui-redesign.md` had marked the legacy `.qss` files "PRESERVE for rollback" — deleted instead (git history serves rollback; in-tree derived QSS invites drift from `qss_builder.py`). `high_contrast`, previously advertised in AGENTS.md, was spec-deferred and unreachable at runtime, so removing it is a docs correction, not a feature removal. Follow-up: add `high_contrast` as a real `DesignTokens` preset + `_THEME_REGISTRY` entry when wanted. The "Current Coverage" table above remains stale for other (older) test files and should be reconciled in a separate docs pass.
+
+### 2026-10-08 (ADB WhatsApp Database Acquisition)
+- Change: Implemented "Extract WhatsApp Databases" as a real acquisition workflow. New pure module `src/wft/acquisition/whatsapp_paths.py` (PathCandidate + `plan_database_paths()`; public `/sdcard/Android/media/com.whatsapp/WhatsApp/Databases` + `/sdcard/WhatsApp/Databases`, private `/data/data/com.whatsapp/databases` + `files/key` for SU only). `AdbService.detect_root(serial)` added with `RootAccess` enum (SU / ADB_ROOT_CAPABLE / NONE) — probes `su -c id` then `getprop ro.build.type`; never invokes `adb root`. `AdbOperationWorker` gained `EXTRACT_WHATSAPP_DATABASES` operation: enumerate → pull → per-file SHA-256 → per-file evidence_files/hashes rows under one evidence_items row → `WHATSAPP_DATABASES_ACQUIRED` audit event → structured result (ACQUIRED/PARTIAL/NO_FILES_FOUND/FAILED/CANCELLED). ADB page gained the button + tooltip in the authorised-actions area, reusing existing preconditions/progress/cancel machinery.
+- Rules honoured: encrypted crypt12/14/15 acquired byte-for-byte (decryption pending, no decryption code); no automatic parsing; no wireless ADB; ADB_ROOT_CAPABLE never grants private-path access.
+- Deviation from spec literal: `acquisition_method="ADB_LOGICAL"` used instead of the spec's `"adb"` to match existing sibling acquisitions (media/metadata).
+- Verification: full suite 448 passed (409 + 39 new); E2E demo 27/27; `compileall` clean; diff audited for com.whatsupport/adb-root/parse/decrypt — zero hits. ruff/black/pyflakes unavailable in this environment (pre-existing limitation).
+- Follow-ups: real-device validation with a USB-connected Android device remains untested; crypt12/14/15 decryption is the next capability; `SettingsPage` save-path bug (`~/.wft/` vs platform path) still open; `_now_utc()` duplication (bottleneck #2) still open.

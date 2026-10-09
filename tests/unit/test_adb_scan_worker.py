@@ -1,8 +1,9 @@
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
-from wft.application.services.adb_service import AdbService, AdbDevice, AdbState
+from wft.application.services.adb_service import AdbService, AdbDevice, AdbState, AdbError
 from wft.ui.workers.adb_scan_worker import (
     AdbOperationWorker, AdbOperationType,
 )
@@ -135,6 +136,103 @@ def test_validate_path_worker(mock_service_factory):
     assert len(finished_called) == 1
     assert finished_called[0] is True
     service.validate_path.assert_called_once_with("C:\\adb.exe")
+
+
+def test_import_user_export_returns_none(mock_service_factory):
+    service = mock_service_factory()
+    worker = AdbOperationWorker(
+        operation=AdbOperationType.IMPORT_USER_EXPORT,
+        serial="TEST001",
+        timeout=10,
+        _service_override=service,
+    )
+    finished_called = []
+    worker.signals.finished.connect(lambda d: finished_called.append(d))
+    worker.run()
+    assert len(finished_called) == 1
+    assert finished_called[0] is None
+
+
+def test_copy_accessible_media_requires_case_dir(mock_service_factory):
+    service = mock_service_factory()
+    worker = AdbOperationWorker(
+        operation=AdbOperationType.COPY_ACCESSIBLE_MEDIA,
+        serial="TEST001",
+        timeout=10,
+        _service_override=service,
+    )
+    error_called = []
+    worker.signals.error.connect(lambda msg: error_called.append(msg))
+    worker.run()
+    assert len(error_called) == 1
+    assert "case directory" in error_called[0].lower()
+
+
+def test_record_device_metadata_requires_case_context(mock_service_factory):
+    service = mock_service_factory()
+    worker = AdbOperationWorker(
+        operation=AdbOperationType.RECORD_DEVICE_METADATA,
+        serial="TEST001",
+        timeout=10,
+        _service_override=service,
+    )
+    error_called = []
+    worker.signals.error.connect(lambda msg: error_called.append(msg))
+    worker.run()
+    assert len(error_called) == 1
+    assert "case context" in error_called[0].lower()
+
+
+def test_copy_accessible_media_uses_list_directory(mock_service_factory, tmp_path):
+    service = mock_service_factory()
+    service.list_directory.side_effect = AdbError("Permission denied")
+    worker = AdbOperationWorker(
+        operation=AdbOperationType.COPY_ACCESSIBLE_MEDIA,
+        serial="TEST001",
+        timeout=10,
+        _service_override=service,
+        case_dir=tmp_path,
+    )
+    finished_called = []
+    worker.signals.finished.connect(lambda d: finished_called.append(d))
+    worker.run()
+    assert len(finished_called) == 1
+    result = finished_called[0]
+    assert result.copied_count == 0
+    assert result.warnings is not None
+
+
+def test_record_device_metadata_calls_get_device_details(mock_service_factory, tmp_path):
+    from wft.infrastructure.hashing.hashing_service import HashingService
+    from wft.application.services.evidence_service import EvidenceService
+    service = mock_service_factory()
+    device = AdbDevice(
+        serial="TEST001",
+        state=AdbState.CONNECTED,
+        model="Pixel 9",
+        manufacturer="Google",
+    )
+    service.get_device_details.return_value = device
+    service.list_directory.return_value = []
+
+    db_path = tmp_path / "case.db"
+    hash_service = HashingService()
+    evidence_service = MagicMock(spec=EvidenceService)
+
+    worker = AdbOperationWorker(
+        operation=AdbOperationType.RECORD_DEVICE_METADATA,
+        serial="TEST001",
+        timeout=10,
+        _service_override=service,
+        case_dir=tmp_path,
+        db_path=db_path,
+        hash_service=hash_service,
+        evidence_service=evidence_service,
+    )
+    error_called = []
+    worker.signals.error.connect(lambda msg: error_called.append(msg))
+    worker.run()
+    service.get_device_details.assert_called_once_with("TEST001", timeout=10)
 
 
 def test_device_details_worker(mock_service_factory):

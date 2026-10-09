@@ -1,16 +1,6 @@
-import sys
-import pytest
-from PySide6.QtWidgets import QApplication, QFrame
+from PySide6.QtWidgets import QFrame
 from wft.ui.components.status_banner import StatusBanner
 from wft.ui.components.evidence_banner import EvidenceBanner
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    yield app
 
 
 class TestStatusBanner:

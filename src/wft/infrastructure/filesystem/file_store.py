@@ -1,5 +1,6 @@
 import shutil
 import zipfile
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -21,7 +22,11 @@ class FileStore:
 
     def resolve(self, relative_path: str) -> Path:
         p = (self._base / relative_path).resolve()
-        if not str(p).startswith(str(self._base)):
+        try:
+            outside_base = os.path.commonpath((str(self._base), str(p))) != str(self._base)
+        except ValueError:
+            outside_base = True
+        if outside_base:
             raise FileStoreError(f"Path traversal detected: {relative_path}")
         return p
 
@@ -40,19 +45,30 @@ class FileStore:
             for info in zf.infolist():
                 if info.is_dir():
                     continue
-                name = info.filename
-                if ".." in name or name.startswith("/"):
+                name = info.filename.replace("\\", "/")
+                if name.startswith("/") or Path(name).drive or any(
+                    part == ".." for part in Path(name).parts
+                ):
                     raise QuarantineError(f"Path traversal in ZIP: {name}")
                 dest_path = (dest_dir / name).resolve()
-                if not str(dest_path).startswith(str(dest_dir.resolve())):
+                try:
+                    outside_target = os.path.commonpath(
+                        (str(dest_dir.resolve()), str(dest_path))
+                    ) != str(dest_dir.resolve())
+                except ValueError:
+                    outside_target = True
+                if outside_target:
                     raise QuarantineError(f"ZIP entry outside target: {name}")
+                if (info.external_attr >> 16) & 0o170000 == 0o120000:
+                    raise QuarantineError(f"Unsupported ZIP entry type: {name}")
                 total_size += info.file_size
                 if total_size > max_size:
                     raise QuarantineError("Archive expansion exceeds size limit")
                 if len(extracted) >= max_files:
                     raise QuarantineError("Archive contains too many files")
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
-                zf.extract(info, dest_dir)
+                with zf.open(info) as src, dest_path.open("wb") as dst:
+                    shutil.copyfileobj(src, dst)
                 extracted.append(dest_path)
         return extracted
 

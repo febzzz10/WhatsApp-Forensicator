@@ -5,18 +5,19 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem, QFileDialog,
     QMessageBox, QGroupBox, QComboBox, QSplitter,
-    QTextEdit, QTabWidget, QFrame,
+    QTabWidget,
 )
-from PySide6.QtCore import Qt, QThread
+from PySide6.QtCore import Qt, QThreadPool
 
 from wft.bootstrap import Container
 from wft.application.services.case_context import ActiveCaseContext
 from wft.ui.components import PageHeader, NeonButton, StatusBadge, EvidenceBanner, EmptyState
-from wft.ui.workers.parse_worker import ParseEvidenceWorker
-from wft.ui.workers.worker_base import BackgroundWorker, CancellationToken, WorkerSignals
-from wft.infrastructure.database.uow import UnitOfWork
+from wft.ui.workers.import_export_worker import (
+    EvidenceImportWorker,
+    EvidenceParseWorker,
+)
+from wft.ui.workers.worker_base import CancellationToken
 from wft.application.services.evidence_service import EvidenceRepository
-from wft.application.services.audit_service import AuditService
 
 
 class EvidencePage(QWidget):
@@ -25,6 +26,12 @@ class EvidencePage(QWidget):
         self._container = container
         self._ctx = ctx
         self._main_window = main_window
+        self._thread_pool = QThreadPool.globalInstance()
+        self._active_worker = None
+        self._active_token: Optional[CancellationToken] = None
+        self._operation_case_id: Optional[int] = None
+        self._closed = False
+        self._ctx.case_changed.connect(self._on_case_changed)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -83,6 +90,13 @@ class EvidencePage(QWidget):
         self._parse_btn.setEnabled(False)
         left_layout.addWidget(self._parse_btn)
 
+        self._cancel_btn = NeonButton("Cancel Operation", "danger")
+        self._cancel_btn.setAccessibleName("Cancel Evidence Import")
+        self._cancel_btn.setToolTip("Cancel Evidence Import")
+        self._cancel_btn.clicked.connect(self._cancel_operation)
+        self._cancel_btn.setVisible(False)
+        left_layout.addWidget(self._cancel_btn)
+
         splitter.addWidget(left_panel)
 
         self._detail_tabs = QTabWidget()
@@ -110,8 +124,117 @@ class EvidencePage(QWidget):
         layout.addWidget(splitter, 1)
 
     def on_activated(self) -> None:
+        self._closed = False
         if self._ctx.is_active:
             self._refresh_list()
+
+    def closeEvent(self, event) -> None:
+        self._closed = True
+        self._cancel_operation()
+        super().closeEvent(event)
+
+    def _on_case_changed(self, _case_id: int, _case_path: str) -> None:
+        self._cancel_operation()
+
+    def _operation_is_current(self) -> bool:
+        return (
+            not self._closed
+            and
+            self._ctx.is_active
+            and self._operation_case_id == self._ctx.case_id
+            and self._ctx.case_path is not None
+        )
+
+    def _begin_operation(self, worker, case_id: int) -> None:
+        if self._active_worker is not None:
+            QMessageBox.information(self, "Operation Active", "An evidence operation is already running.")
+            return
+        self._active_worker = worker
+        self._active_token = worker._token
+        self._operation_case_id = case_id
+        worker.signals.started.connect(self._on_worker_started)
+        worker.signals.progress.connect(self._on_worker_progress)
+        worker.signals.finished.connect(self._on_worker_finished)
+        worker.signals.error.connect(self._on_worker_error)
+        worker.signals.cancelled.connect(self._on_worker_cancelled)
+        self._cancel_btn.setVisible(True)
+        self._parse_btn.setEnabled(False)
+        self._thread_pool.start(worker)
+
+    def _finish_operation(self) -> None:
+        self._active_worker = None
+        self._active_token = None
+        self._operation_case_id = None
+        self._cancel_btn.setVisible(False)
+        self._parse_btn.setEnabled(self._evidence_list.currentRow() >= 0)
+
+    def _cancel_operation(self) -> None:
+        if self._active_worker is not None:
+            self._active_worker.cancel()
+
+    def _on_worker_started(self) -> None:
+        if self._operation_is_current():
+            self._banner.setText("Evidence operation in progress...")
+            self._banner.setVisible(True)
+
+    def _on_worker_progress(self, message: str, _current: int, _total: int) -> None:
+        if self._operation_is_current():
+            self._banner.setText(message)
+            self._banner.setVisible(True)
+
+    def _on_worker_finished(self, result: object) -> None:
+        current = self._operation_is_current()
+        self._finish_operation()
+        if not current:
+            return
+        self._refresh_list()
+        if isinstance(result, dict) and "imported_file_count" in result:
+            if result.get("status") in {"FAILED", "CANCELLED"}:
+                QMessageBox.warning(
+                    self,
+                    "Directory Import Incomplete",
+                    "; ".join(result.get("warnings", [])) or "The directory import did not complete.",
+                )
+                return
+            QMessageBox.information(
+                self,
+                "Directory Import Complete",
+                f"Imported {result['imported_file_count']} files; "
+                f"parsed {result.get('parsed_file_count', 0)}; "
+                f"unsupported {result.get('unsupported_file_count', 0)}; "
+                f"skipped {result.get('skipped_file_count', 0)}.",
+            )
+            return
+        if isinstance(result, dict) and "parse" in result:
+            parse_result = result["parse"]
+            import_result = result["import"]
+            QMessageBox.information(
+                self,
+                "Import Complete",
+                f"Imported and parsed {parse_result.get('message_count', 0)} messages.",
+            )
+        elif isinstance(result, dict) and result.get("success"):
+            QMessageBox.information(
+                self,
+                "Parse Complete",
+                f"Parsed {result.get('message_count', 0)} messages, "
+                f"{result.get('contact_count', 0)} contacts, "
+                f"{result.get('call_count', 0)} calls.",
+            )
+
+    def _on_worker_error(self, message: str) -> None:
+        current = self._operation_is_current()
+        self._finish_operation()
+        if current:
+            QMessageBox.critical(self, "Evidence Operation Failed", message)
+            self._refresh_list()
+
+    def _on_worker_cancelled(self) -> None:
+        current = self._operation_is_current()
+        self._finish_operation()
+        if current:
+            self._refresh_list()
+            QMessageBox.information(self, "Operation Cancelled", "The evidence operation was cancelled.")
 
     def _refresh_list(self) -> None:
         self._evidence_list.clear()
@@ -156,12 +279,16 @@ class EvidencePage(QWidget):
             QMessageBox.warning(self, "No Case", "Open a case first.")
             return
 
-        source_path = QFileDialog.getExistingDirectory(self, "Select Evidence Source")
+        source_type = self._source_type.currentText()
+        if source_type in ("Media directory", "Generic evidence folder"):
+            source_path = QFileDialog.getExistingDirectory(self, "Select Evidence Source")
+        else:
+            source_path, _ = QFileDialog.getOpenFileName(self, "Select Evidence Source")
         if not source_path:
             return
 
         source_path_obj = Path(source_path)
-        src_type = self._source_type.currentText()
+        src_type = source_type
         source_type_map = {
             "WhatsApp chat export ZIP": "WHATSAPP_EXPORT_ZIP",
             "WhatsApp text export": "WHATSAPP_TEXT_EXPORT",
@@ -171,72 +298,19 @@ class EvidencePage(QWidget):
             "Generic evidence folder": "GENERIC_FILES",
         }
 
-        try:
-            db = self._ctx.get_db()
-            repo = EvidenceRepository(db)
-            items = repo.get_items_for_case(self._ctx.case_id)
-            evidence_code = f"E{len(items)+1:04d}"
-
-            result = self._container.evidence_service.import_file(
-                db=db,
-                case_id=self._ctx.case_id,
-                evidence_code=evidence_code,
-                title=source_path_obj.name,
-                source_type=source_type_map.get(src_type, "GENERIC_FILES"),
-                acquisition_method="USER_PROVIDED",
-                source_path=source_path_obj,
-            )
-
-            audit = AuditService()
-            audit.record_event(
-                db, self._ctx.case_id,
-                "EVIDENCE_IMPORTED",
-                f"Imported {source_path_obj.name} as {evidence_code}",
-            )
-            db.commit()
-
-            QMessageBox.information(
-                self, "Success",
-                f"Evidence {evidence_code} imported.\nSHA-256: {result['sha256'][:16]}..."
-            )
-            self._refresh_list()
-
-            self._try_auto_parse(source_path_obj, result["item_id"], result.get("file_id", 1))
-
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Import failed:\n{exc}")
-
-    def _try_auto_parse(self, source_path: Path, evidence_item_id: int, source_file_id: int) -> None:
-        try:
-            worker = ParseEvidenceWorker(
-                self._container.parse_service,
-                AuditService(),
-                self._ctx.case_path,
-            )
-            result = worker.run(
-                case_id=self._ctx.case_id,
-                evidence_item_id=evidence_item_id,
-                source_file_id=source_file_id,
-                source_path=source_path,
-                db_path=self._ctx.db_path,
-                display_timezone="UTC",
-            )
-            if result.get("success"):
-                QMessageBox.information(
-                    self, "Parse Complete",
-                    f"Parsed {result.get('message_count', 0)} messages, "
-                    f"{result.get('contact_count', 0)} contacts, "
-                    f"{result.get('call_count', 0)} calls."
-                )
-            else:
-                QMessageBox.information(
-                    self, "Parse Note",
-                    f"Auto-parse: {result.get('status', 'UNSUPPORTED')}. "
-                    f"{result.get('error', 'No parser available')}"
-                )
-            self._refresh_list()
-        except Exception as exc:
-            self._container.log.warning(f"Auto-parse failed: {exc}")
+        worker = EvidenceImportWorker(
+            evidence_service=self._container.evidence_service,
+            audit_service=self._container.audit_service,
+            parse_service=self._container.parse_service,
+            case_id=self._ctx.case_id,
+            case_dir=self._ctx.case_path,
+            db_path=self._ctx.db_path,
+            source_path=source_path_obj,
+            source_type=source_type_map.get(src_type, "GENERIC_FILES"),
+            acquisition_method="USER_PROVIDED",
+            source_is_directory=source_type in ("Media directory", "Generic evidence folder"),
+        )
+        self._begin_operation(worker, self._ctx.case_id)
 
     def _on_parse_selected(self) -> None:
         row = self._evidence_list.currentRow()
@@ -248,40 +322,29 @@ class EvidencePage(QWidget):
             if row >= len(items):
                 return
             item = items[row]
-            from wft.infrastructure.database.artefact_repositories import ParserRunRepository
-
-            run_repo = ParserRunRepository(self._ctx.get_db())
-            file_path = self._ctx.case_path / item.get("stored_relative_path", "")
+            file_row = self._ctx.get_db().execute(
+                "SELECT id, stored_relative_path FROM evidence_files "
+                "WHERE evidence_item_id = ? ORDER BY id LIMIT 1",
+                (item["id"],),
+            ).fetchone()
+            if file_row is None:
+                raise ValueError(f"No evidence file registered for item {item['id']}")
+            source_file_id = int(file_row[0])
+            file_path = self._ctx.case_path / str(file_row[1])
             if not file_path.exists():
                 QMessageBox.warning(self, "File Not Found", f"Cannot locate evidence file at {file_path}")
                 return
 
-            worker = ParseEvidenceWorker(
-                self._container.parse_service,
-                AuditService(),
-                self._ctx.case_path,
-            )
-            result = worker.run(
+            worker = EvidenceParseWorker(
+                parse_service=self._container.parse_service,
+                audit_service=self._container.audit_service,
                 case_id=self._ctx.case_id,
                 evidence_item_id=item["id"],
-                source_file_id=1,
+                source_file_id=source_file_id,
                 source_path=file_path,
                 db_path=self._ctx.db_path,
-                display_timezone="UTC",
+                case_dir=self._ctx.case_path,
             )
-            if result.get("success"):
-                QMessageBox.information(
-                    self, "Parse Complete",
-                    f"Parser: {result.get('parser_id', 'unknown')}\n"
-                    f"Messages: {result.get('message_count', 0)}\n"
-                    f"Contacts: {result.get('contact_count', 0)}\n"
-                    f"Calls: {result.get('call_count', 0)}"
-                )
-            else:
-                QMessageBox.warning(
-                    self, "Parse Failed",
-                    result.get("error", "Unknown error")
-                )
-            self._refresh_list()
+            self._begin_operation(worker, self._ctx.case_id)
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Parse failed:\n{exc}")

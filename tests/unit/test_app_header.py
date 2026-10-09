@@ -1,16 +1,6 @@
-import sys
-import pytest
 from PySide6.QtWidgets import QApplication, QWidget
 from wft.ui.components.app_header import AppHeader
 from wft.ui.pages.page_id import PageId
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    return app
 
 
 class TestAppHeader:

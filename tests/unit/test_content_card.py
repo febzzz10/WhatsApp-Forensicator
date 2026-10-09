@@ -1,15 +1,5 @@
-import sys
-import pytest
-from PySide6.QtWidgets import QApplication, QFrame, QLabel
+from PySide6.QtWidgets import QFrame, QLabel
 from wft.ui.components.content_card import ContentCard
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    return app
 
 
 class TestContentCard:

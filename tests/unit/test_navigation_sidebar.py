@@ -1,7 +1,6 @@
-import sys
 import pytest
 from PySide6.QtCore import QCoreApplication, QVariantAnimation
-from PySide6.QtWidgets import QApplication, QWidget, QLabel
+from PySide6.QtWidgets import QWidget, QLabel
 from shiboken6 import isValid
 from wft.ui.pages.page_id import PageId
 from wft.ui.components.navigation_sidebar import NavigationSidebar
@@ -11,14 +10,6 @@ from wft.ui.theme.tokens import DesignTokens
 def _process_events():
     for _ in range(100):
         QCoreApplication.processEvents()
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    return app
 
 
 class TestNavigationSidebar:

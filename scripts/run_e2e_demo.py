@@ -117,7 +117,7 @@ def main() -> int:
                 source_path=chat_file,
             )
             item_id = ev_result["item_id"]
-            file_id = ev_result.get("file_id", 1)
+            file_id = ev_result["file_id"]
             sha256 = ev_result["sha256"]
             auditor.record_event(uow.db, case_id, "EVIDENCE_IMPORTED",
                                  f"Imported _chat.txt as E0001", component_name="e2e_demo")

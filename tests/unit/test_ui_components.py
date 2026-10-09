@@ -1,14 +1,8 @@
-import sys
-import tempfile
-from pathlib import Path
-
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QLabel, QTabBar
+from PySide6.QtWidgets import QLabel, QTabBar
 from PySide6.QtTest import QTest
 
-from wft.ui.themes.tokens import ColorTokens
-from wft.ui.themes.theme_manager import ThemeManager
 from wft.ui.components import (
     NeonButton,
     StatusBadge,
@@ -19,54 +13,6 @@ from wft.ui.components import (
     ErrorPanel,
 )
 from wft.ui.workers import CancellationToken
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    return app
-
-
-class TestColorTokens:
-    def test_default_tokens_have_all_keys(self):
-        tokens = ColorTokens()
-        assert tokens.root_bg == "#020703"
-        assert tokens.primary_green == "#00F56A"
-        assert tokens.danger == "#FF1744"
-        assert tokens.recovered == "#B86CFF"
-
-    def test_high_contrast_tokens_differ(self):
-        default = ColorTokens()
-        hc = ColorTokens.high_contrast()
-        assert hc.root_bg == "#000000"
-        assert hc.root_bg != default.root_bg
-        assert hc.primary_text == "#FFFFFF"
-
-
-class TestThemeManager:
-    def test_theme_manager_initial_state(self, qapp):
-        tm = ThemeManager(qapp)
-        assert tm.current_theme == "dark_neon"
-        assert tm.reduced_motion is False
-        assert tm.tokens is not None
-
-    def test_theme_manager_high_contrast(self, qapp):
-        tm = ThemeManager(qapp)
-        tm.set_theme("high_contrast")
-        assert tm.current_theme == "high_contrast"
-        assert tm.tokens.primary_text == "#FFFFFF"
-
-    def test_set_reduced_motion(self, qapp):
-        tm = ThemeManager(qapp)
-        tm.set_reduced_motion(True)
-        assert tm.reduced_motion is True
-
-    def test_theme_manager_unknown_theme(self, qapp):
-        tm = ThemeManager(qapp)
-        tm.set_theme("nonexistent")
-        assert tm.current_theme == "dark_neon"
 
 
 class TestNeonButton:
@@ -218,19 +164,3 @@ class TestDashboardNavigation:
         from wft.ui.pages.voip_page import VoIPPage
         page = VoIPPage(_FakeCtx())
         assert page is not None
-
-
-class TestThemeQSS:
-    def test_dark_neon_qss_exists(self, qapp):
-        qss_path = Path(__file__).parents[2] / "src" / "wft" / "ui" / "themes" / "dark_neon.qss"
-        assert qss_path.exists()
-        content = qss_path.read_text()
-        assert "QMainWindow" in content
-        assert "#020703" in content
-
-    def test_high_contrast_qss_exists(self, qapp):
-        qss_path = Path(__file__).parents[2] / "src" / "wft" / "ui" / "themes" / "high_contrast.qss"
-        assert qss_path.exists()
-        content = qss_path.read_text()
-        assert "QMainWindow" in content
-        assert "#000000" in content
