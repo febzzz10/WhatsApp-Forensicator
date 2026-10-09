@@ -479,3 +479,18 @@ def test_artifact_set_independent_of_listing_order(case_env):
     finished, _, _ = run_and_collect(worker)
     assert finished[0].status == "ACQUIRED"
     assert len(finished[0].artifacts) == 3
+
+def test_acquired_files_are_read_only_on_disk(case_env):
+    import os
+    import stat
+    service = make_service(
+        listings={PUBLIC_PATH: ["wa.db"]},
+        pulls={PUBLIC_PATH + "/wa.db": WA_DB},
+    )
+    worker = make_worker(service, case_env)
+    finished, _, _ = run_and_collect(worker)
+
+    artifact = finished[0].artifacts[0]
+    local = Path(case_env["case_path"]) / artifact.local_path
+    mode = stat.S_IMODE(os.stat(local).st_mode)
+    assert mode == 0o444
