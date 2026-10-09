@@ -1,15 +1,6 @@
-import sys
 import pytest
-from PySide6.QtWidgets import QApplication, QStackedWidget
+from PySide6.QtWidgets import QStackedWidget
 from wft.ui.pages.page_id import PageId
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture(scope="module")
@@ -63,4 +54,3 @@ class TestMainWindowShell:
 
     def test_navigate_to_invalid_string_does_nothing(self, main_window):
         main_window.navigate_to("nonexistent")
-

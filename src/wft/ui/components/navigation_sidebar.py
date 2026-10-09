@@ -58,6 +58,8 @@ class NavigationSidebar(QWidget):
         self._items: dict[PageId, NavigationItem] = {}
         self._settings_callback = None
         self._animation: QVariantAnimation | None = None
+        self._animation_value_slot = None
+        self._animation_finished_slot = None
 
         self._expanded_width = self._tokens.sidebar_expanded_width
         self._collapsed_width = self._tokens.sidebar_collapsed_width
@@ -164,14 +166,12 @@ class NavigationSidebar(QWidget):
             old.stop()
         except RuntimeError:
             pass
-        try:
-            old.valueChanged.disconnect()
-        except (RuntimeError, TypeError):
-            pass
-        try:
-            old.finished.disconnect()
-        except (RuntimeError, TypeError):
-            pass
+        if self._animation_value_slot is not None:
+            old.valueChanged.disconnect(self._animation_value_slot)
+        if self._animation_finished_slot is not None:
+            old.finished.disconnect(self._animation_finished_slot)
+        self._animation_value_slot = None
+        self._animation_finished_slot = None
         try:
             old.deleteLater()
         except RuntimeError:
@@ -194,12 +194,12 @@ class NavigationSidebar(QWidget):
         animation.setDuration(self._tokens.animation_duration_normal_ms)
         animation.setStartValue(start_width)
         animation.setEndValue(target)
-        animation.valueChanged.connect(
-            lambda v: self._apply_sidebar_width(v)
-        )
-        animation.finished.connect(
+        self._animation_value_slot = lambda v: self._apply_sidebar_width(v)
+        self._animation_finished_slot = (
             lambda anim=animation, tgt=target: self._on_animation_finished(anim, tgt)
         )
+        animation.valueChanged.connect(self._animation_value_slot)
+        animation.finished.connect(self._animation_finished_slot)
         animation.start()
 
     def _on_animation_finished(

@@ -1,15 +1,5 @@
-import sys
-import pytest
-from PySide6.QtWidgets import QApplication, QDialog, QPushButton
+from PySide6.QtWidgets import QDialog, QPushButton
 from wft.ui.components.confirm_dialog import ConfirmDialog
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    return app
 
 
 class TestConfirmDialog:

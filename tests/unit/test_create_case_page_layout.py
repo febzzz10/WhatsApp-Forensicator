@@ -1,8 +1,7 @@
-import sys
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QApplication, QVBoxLayout, QFormLayout, QLineEdit,
+    QVBoxLayout, QFormLayout, QLineEdit,
     QTextEdit, QComboBox, QCheckBox, QLabel, QHBoxLayout,
     QSizePolicy,
 )
@@ -10,14 +9,6 @@ from wft.bootstrap import Container
 from wft.ui.pages.create_case_page import CreateCasePage
 from wft.ui.components import NeonButton, ContentCard
 from wft.ui.theme.tokens import DesignTokens
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture

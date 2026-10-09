@@ -1,15 +1,5 @@
-import sys
-import pytest
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QPushButton
 from wft.ui.components.neon_button import NeonButton
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    yield app
 
 
 class TestNeonButtonNewAPI:

@@ -69,6 +69,13 @@ class ParseService:
     ) -> dict:
         selection = self.select_parser(source_path)
         if not selection:
+            uow = UnitOfWork(db_path)
+            with uow:
+                uow.db.execute(
+                    "UPDATE evidence_items SET state = ?, updated_at_utc = ? WHERE id = ?",
+                    ("UNSUPPORTED", _now_utc(), evidence_item_id),
+                )
+                uow.commit()
             return {
                 "success": False,
                 "status": "UNSUPPORTED",
@@ -314,8 +321,6 @@ class ParseService:
                     "\n".join(total_warnings[:10]) if total_warnings else None,
                 )
 
-                uow.commit()
-
                 uow.db.execute(
                     "UPDATE evidence_items SET state = ?, updated_at_utc = ? WHERE id = ?",
                     ("PARSED" if status == "COMPLETED" else "PARTIALLY_PARSED", _now_utc(), evidence_item_id),
@@ -327,6 +332,7 @@ class ParseService:
                         f"FTS index {'updated' if indexed else 'not available'} "
                         f"({len(messages_batch)} messages)"
                     )
+                uow.commit()
 
                 self._log.info(
                     f"Parser {parser.adapter_id} v{parser.adapter_version} "
@@ -355,6 +361,7 @@ class ParseService:
                     "UPDATE evidence_items SET state = ?, updated_at_utc = ? WHERE id = ?",
                     ("FAILED", _now_utc(), evidence_item_id),
                 )
+                uow.commit()
                 self._log.error(f"Parser failed for evidence {evidence_item_id}: {exc}")
 
                 return {
@@ -408,6 +415,4 @@ class WorkingParseContext:
         self.source_file_id = source_file_id
         self.working_copy_path = working_copy_path
         self.timezone = timezone
-
-
 

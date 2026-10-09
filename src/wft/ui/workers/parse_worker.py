@@ -108,6 +108,7 @@ class BatchImportWorker:
                     source_type="IMPORTED",
                     acquisition_method="USER_PROVIDED",
                     source_path=source_path,
+                    case_dir=case_dir,
                 )
 
                 result["evidence_item_id"] = import_result["item_id"]
@@ -129,8 +130,8 @@ class BatchImportWorker:
             parse_result = self._parse_service.parse_evidence(
                 case_id=case_id,
                 evidence_item_id=import_result["item_id"],
-                source_file_id=import_result.get("file_id", 1),
-                source_path=source_path,
+                source_file_id=import_result["file_id"],
+                source_path=case_dir / import_result["stored_path"],
                 db_path=db_path,
                 case_dir=case_dir,
                 display_timezone=display_timezone,
