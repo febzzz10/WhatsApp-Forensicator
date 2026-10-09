@@ -19,3 +19,6 @@ Thumbs.db
 *.db.bak
 *.db-journal
 *.db-wal
+
+# Local agent tooling
+.opencode/
