@@ -1,7 +1,8 @@
 import re
+from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QRunnable
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QGroupBox, QPushButton,
@@ -19,6 +20,11 @@ from wft.ui.workers.adb_scan_worker import (
 )
 from wft.ui.workers.worker_base import CancellationToken, thread_pool
 from wft.ui.utils.font_utils import ensure_valid_font_size
+
+EXTRACT_DBS_READY_TOOLTIP = (
+    "Acquires WhatsApp database files (msgstore, wa.db, crypt12/14/15 backups) "
+    "as evidence. Acquisition only - backups are NOT decrypted here."
+)
 
 
 def _redact_serial(serial: str) -> str:
@@ -93,7 +99,9 @@ class ADBExtractorPage(QWidget):
         self._configured_path: Optional[str] = container.settings.adb.adb_path
         self._worker: Optional[AdbOperationWorker] = None
         self._details_worker: Optional[AdbOperationWorker] = None
-        self._pending_workers: set[AdbOperationWorker] = set()
+        self._pending_workers: set[QRunnable] = set()
+        self._adb_operation_workers: set[AdbOperationWorker] = set()
+        self._authorised_ops_in_progress: set[AdbOperationType] = set()
 
         self._poll_timer = QTimer(self)
         self._poll_timer.timeout.connect(self._on_poll_timeout)
@@ -301,16 +309,27 @@ class ADBExtractorPage(QWidget):
         self._copy_media_btn.setObjectName("secondaryButton")
         self._record_metadata_btn = QPushButton("Record Device Metadata")
         self._record_metadata_btn.setObjectName("secondaryButton")
+        self._extract_dbs_btn = QPushButton("Extract WhatsApp Databases")
+        self._extract_dbs_btn.setObjectName("secondaryButton")
 
-        for btn in [self._import_export_btn, self._copy_media_btn, self._record_metadata_btn]:
+        for btn in [self._import_export_btn, self._copy_media_btn, self._record_metadata_btn,
+                    self._extract_dbs_btn]:
             btn.setEnabled(False)
             btn.setMinimumHeight(42)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn.setToolTip("Open or create a forensic case before acquiring evidence.")
 
+        self._extract_dbs_btn.setToolTip(EXTRACT_DBS_READY_TOOLTIP)
+
+        self._import_export_btn.clicked.connect(self._on_import_user_export)
+        self._copy_media_btn.clicked.connect(self._on_copy_accessible_media)
+        self._record_metadata_btn.clicked.connect(self._on_record_device_metadata)
+        self._extract_dbs_btn.clicked.connect(self._on_extract_whatsapp_databases)
+
         authorised_layout.addWidget(self._import_export_btn)
         authorised_layout.addWidget(self._copy_media_btn)
         authorised_layout.addWidget(self._record_metadata_btn)
+        authorised_layout.addWidget(self._extract_dbs_btn)
         authorised_group.setLayout(authorised_layout)
         left_layout.addWidget(authorised_group)
         left_layout.addStretch()
@@ -411,13 +430,24 @@ class ADBExtractorPage(QWidget):
     def _update_authorised_actions(self) -> None:
         has_case = self._ctx.is_active
         device_connected = any(d.state == AdbState.CONNECTED for d in self._devices)
-        enabled = has_case and device_connected
-        for btn in [self._import_export_btn, self._copy_media_btn, self._record_metadata_btn]:
-            btn.setEnabled(enabled)
-            if not has_case:
+        base_enabled = has_case and device_connected
+        btn_ops = [
+            (self._import_export_btn, AdbOperationType.IMPORT_USER_EXPORT),
+            (self._copy_media_btn, AdbOperationType.COPY_ACCESSIBLE_MEDIA),
+            (self._record_metadata_btn, AdbOperationType.RECORD_DEVICE_METADATA),
+            (self._extract_dbs_btn, AdbOperationType.EXTRACT_WHATSAPP_DATABASES),
+        ]
+        for btn, op in btn_ops:
+            in_progress = op in self._authorised_ops_in_progress
+            btn.setEnabled(base_enabled and not in_progress)
+            if in_progress:
+                btn.setToolTip("Operation in progress...")
+            elif not has_case:
                 btn.setToolTip("Open or create a forensic case before acquiring evidence.")
             elif not device_connected:
                 btn.setToolTip("Connect and authorise a device before acquiring evidence.")
+            elif btn is self._extract_dbs_btn:
+                btn.setToolTip(EXTRACT_DBS_READY_TOOLTIP)
             else:
                 btn.setToolTip("")
 
@@ -859,3 +889,258 @@ class ADBExtractorPage(QWidget):
     def _on_clear_log(self) -> None:
         self._log.clear()
         self._log_entries.clear()
+
+    def _get_selected_serial(self) -> Optional[str]:
+        return self._device_selector.currentData()
+
+    def _check_authorised_preconditions(self) -> bool:
+        if not self._ctx.is_active:
+            self._log_message("Cannot acquire evidence: no case is open.")
+            return False
+        if not self._get_selected_serial():
+            self._log_message("Cannot acquire evidence: no device selected.")
+            return False
+        if not any(d.state == AdbState.CONNECTED for d in self._devices):
+            self._log_message(
+                "Cannot acquire evidence: no authorised device connected."
+            )
+            return False
+        return True
+
+    def _is_authorised_action_allowed(self) -> bool:
+        return (
+            self._ctx.is_active
+            and any(d.state == AdbState.CONNECTED for d in self._devices)
+        )
+
+    def _finish_authorised_action(self, operation: AdbOperationType) -> None:
+        self._authorised_ops_in_progress.discard(operation)
+        self._update_authorised_actions()
+
+    def _start_adb_authorised_action(
+        self,
+        operation: AdbOperationType,
+        btn: QPushButton,
+        action_name: str,
+        timeout: int,
+    ) -> None:
+        if not self._check_authorised_preconditions():
+            return
+        if operation in self._authorised_ops_in_progress:
+            return
+
+        self._authorised_ops_in_progress.add(operation)
+        btn.setEnabled(False)
+        self._log_message("{} requested...".format(action_name))
+
+        token = CancellationToken()
+        worker = AdbOperationWorker(
+            operation=operation,
+            configured_path=self._configured_path,
+            serial=self._get_selected_serial(),
+            timeout=timeout,
+            token=token,
+            case_dir=Path(self._ctx.case_path) if self._ctx.case_path else None,
+            db_path=self._ctx.db_path,
+            evidence_service=self._container.evidence_service,
+            audit_service=self._container.audit_service,
+            hash_service=self._container.hash_service,
+            file_store=self._container.file_store,
+            case_id=self._ctx.case_id,
+        )
+        self._pending_workers.add(worker)
+        self._adb_operation_workers.add(worker)
+
+        def on_progress(msg: str, current: int, total: int) -> None:
+            if current % 10 == 0 or current == total:
+                self._log_message("{} ({}/{})".format(msg, current, total))
+
+        def on_finished(result: object) -> None:
+            self._pending_workers.discard(worker)
+            self._adb_operation_workers.discard(worker)
+            self._finish_authorised_action(operation)
+            self._on_adb_action_result(operation, action_name, result)
+
+        def on_error(error_msg: str) -> None:
+            self._pending_workers.discard(worker)
+            self._adb_operation_workers.discard(worker)
+            self._finish_authorised_action(operation)
+            self._log_message("{} failed: {}".format(action_name, error_msg))
+
+        def on_cancelled() -> None:
+            self._pending_workers.discard(worker)
+            self._adb_operation_workers.discard(worker)
+            self._finish_authorised_action(operation)
+            self._log_message("{} cancelled.".format(action_name))
+
+        worker.signals.progress.connect(on_progress)
+        worker.signals.finished.connect(on_finished)
+        worker.signals.error.connect(on_error)
+        worker.signals.cancelled.connect(on_cancelled)
+        thread_pool.start(worker)
+
+    def _on_adb_action_result(
+        self,
+        operation: AdbOperationType,
+        action_name: str,
+        result: object,
+    ) -> None:
+        from wft.application.services.acquisition_results import (
+            DeviceMetadataResult, MediaAcquisitionResult,
+            WhatsAppDatabaseExtractionResult,
+        )
+
+        if isinstance(result, WhatsAppDatabaseExtractionResult):
+            self._log_message(
+                "WhatsApp database acquisition {}: {} artefact(s), root={}, "
+                "{} failed, {} path(s) not present.".format(
+                    result.status,
+                    len(result.artifacts),
+                    result.root_access,
+                    len(result.failures),
+                    len(result.unavailable_paths),
+                )
+            )
+            for artifact in result.artifacts:
+                state = (
+                    "acquired - encrypted / decryption pending"
+                    if artifact.encrypted
+                    else "acquired"
+                )
+                self._log_message(
+                    "  Artifact: {} ({}) [{}]".format(
+                        artifact.remote_path, state, artifact.sha256[:16]
+                    )
+                )
+            for warning in result.warnings:
+                self._log_message("  Warning: {}".format(warning))
+            for failure in result.failures:
+                self._log_message("  Failure: {}".format(failure))
+            if result.status in ("ACQUIRED", "PARTIAL"):
+                self._log_message(
+                    "Databases registered as evidence. Review them on the Evidence "
+                    "page; encrypted backups remain decryption pending."
+                )
+        elif isinstance(result, DeviceMetadataResult):
+            self._log_message(
+                "Device metadata recorded and verified at: {} ({} fields, hash: {}).".format(
+                    result.artifact_path,
+                    result.fields_recorded,
+                    result.hash_value[:16],
+                )
+            )
+        elif isinstance(result, MediaAcquisitionResult):
+            self._log_message(
+                "Accessible media acquisition completed: {} copied, {} skipped, {} failed ({} bytes).".format(
+                    result.copied_count,
+                    result.skipped_count,
+                    result.failed_count,
+                    result.total_bytes,
+                )
+            )
+            for w in result.warnings:
+                self._log_message("  Warning: {}".format(w))
+        else:
+            self._log_message("{} completed.".format(action_name))
+
+    def _on_import_user_export(self) -> None:
+        if not self._check_authorised_preconditions():
+            return
+        if AdbOperationType.IMPORT_USER_EXPORT in self._authorised_ops_in_progress:
+            return
+
+        from PySide6.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select WhatsApp Export",
+            "",
+            "WhatsApp Export (*.txt *.zip);;Text Files (*.txt);;Zip Files (*.zip);;All Files (*.*)",
+        )
+        if not file_path:
+            self._log_message("Import User Export cancelled.")
+            return
+
+        source = Path(file_path)
+        if not source.is_file():
+            self._log_message(
+                "Import User Export failed: the selected file does not exist."
+            )
+            return
+
+        inspection = self._container.parse_service.inspect_path(source)
+        if not inspection:
+            self._log_message(
+                "Import User Export failed: {} is not a supported format.".format(
+                    source.name
+                )
+            )
+            return
+
+        self._authorised_ops_in_progress.add(AdbOperationType.IMPORT_USER_EXPORT)
+        self._import_export_btn.setEnabled(False)
+        self._log_message("Import User Export: selected {}".format(source.name))
+
+        from wft.ui.workers.import_export_worker import ImportUserExportWorker
+        worker = ImportUserExportWorker(
+            evidence_service=self._container.evidence_service,
+            audit_service=self._container.audit_service,
+            parse_service=self._container.parse_service,
+            hash_service=self._container.hash_service,
+            case_id=self._ctx.case_id,
+            case_dir=Path(self._ctx.case_path),
+            db_path=self._ctx.db_path,
+            source_path=source,
+        )
+        self._pending_workers.add(worker)
+
+        def on_finished(result: object) -> None:
+            self._pending_workers.discard(worker)
+            self._finish_authorised_action(AdbOperationType.IMPORT_USER_EXPORT)
+            if result is None:
+                self._log_message("Import User Export cancelled.")
+                return
+            from wft.application.services.acquisition_results import ImportUserExportResult
+            if isinstance(result, ImportUserExportResult):
+                self._log_message(
+                    "User export imported successfully. {} messages registered. "
+                    "Hash: {}.".format(
+                        result.imported_items,
+                        result.hash_value[:16],
+                    )
+                )
+                if result.warnings:
+                    for w in result.warnings:
+                        self._log_message("  Warning: {}".format(w))
+
+        def on_error(error_msg: str) -> None:
+            self._pending_workers.discard(worker)
+            self._finish_authorised_action(AdbOperationType.IMPORT_USER_EXPORT)
+            self._log_message("Import User Export failed: {}".format(error_msg))
+
+        worker.signals.finished.connect(on_finished)
+        worker.signals.error.connect(on_error)
+        thread_pool.start(worker)
+
+    def _on_copy_accessible_media(self) -> None:
+        self._start_adb_authorised_action(
+            operation=AdbOperationType.COPY_ACCESSIBLE_MEDIA,
+            btn=self._copy_media_btn,
+            action_name="Copy Accessible Media",
+            timeout=300,
+        )
+
+    def _on_record_device_metadata(self) -> None:
+        self._start_adb_authorised_action(
+            operation=AdbOperationType.RECORD_DEVICE_METADATA,
+            btn=self._record_metadata_btn,
+            action_name="Record Device Metadata",
+            timeout=60,
+        )
+
+    def _on_extract_whatsapp_databases(self) -> None:
+        self._start_adb_authorised_action(
+            operation=AdbOperationType.EXTRACT_WHATSAPP_DATABASES,
+            btn=self._extract_dbs_btn,
+            action_name="Extract WhatsApp Databases",
+            timeout=300,
+        )

@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock, PropertyMock
 import pytest
 
 from wft.application.services.adb_service import (
-    AdbService, AdbDevice, AdbState, AdbError,
+    AdbService, AdbDevice, AdbState, AdbError, RootAccess,
 )
 
 
@@ -176,3 +176,89 @@ def test_get_device_details_returns_unknown_for_missing():
         device = service._get_base_device("MISSING_SERIAL")
     assert device.serial == "MISSING_SERIAL"
     assert device.state == AdbState.UNKNOWN
+
+class TestDetectRoot:
+    def _mock_run(self, stdout="", returncode=0, stderr=""):
+        mock = MagicMock()
+        mock.returncode = returncode
+        mock.stdout = stdout
+        mock.stderr = stderr
+        return mock
+
+    def test_su_success_returns_su(self, mock_adb_path):
+        mock_run = self._mock_run(stdout="uid=0(root) gid=0(root) groups=0(root)\n")
+        with patch(
+            "wft.application.services.adb_service.subprocess.run", return_value=mock_run
+        ) as run:
+            access = mock_adb_path.detect_root("SERIAL1")
+        assert access == RootAccess.SU
+        args = run.call_args[0][0]
+        assert "root" not in args
+        assert "su -c id" in args
+        assert "-s" in args and "SERIAL1" in args
+
+    def test_su_failure_userdebug_build_is_capable_only(self, mock_adb_path):
+        su_fail = self._mock_run(returncode=1, stderr="su: not found")
+        build_type = self._mock_run(stdout="userdebug\n")
+        with patch(
+            "wft.application.services.adb_service.subprocess.run",
+            side_effect=[su_fail, build_type],
+        ) as run:
+            access = mock_adb_path.detect_root("SERIAL1")
+        assert access == RootAccess.ADB_ROOT_CAPABLE
+        assert run.call_count == 2
+
+    def test_su_failure_user_build_returns_none(self, mock_adb_path):
+        su_fail = self._mock_run(returncode=1, stderr="su: permission denied")
+        build_type = self._mock_run(stdout="user\n")
+        with patch(
+            "wft.application.services.adb_service.subprocess.run",
+            side_effect=[su_fail, build_type],
+        ):
+            access = mock_adb_path.detect_root("SERIAL1")
+        assert access == RootAccess.NONE
+
+    def test_getprop_failure_returns_none(self, mock_adb_path):
+        su_fail = self._mock_run(returncode=1)
+        prop_fail = self._mock_run(returncode=1)
+        with patch(
+            "wft.application.services.adb_service.subprocess.run",
+            side_effect=[su_fail, prop_fail],
+        ):
+            access = mock_adb_path.detect_root("SERIAL1")
+        assert access == RootAccess.NONE
+
+    def test_detect_root_survives_non_root_su_output(self, mock_adb_path):
+        su_ok_nonroot = self._mock_run(stdout="uid=2000(shell) gid=2000(shell)\n")
+        build_type = self._mock_run(stdout="eng\n")
+        with patch(
+            "wft.application.services.adb_service.subprocess.run",
+            side_effect=[su_ok_nonroot, build_type],
+        ):
+            access = mock_adb_path.detect_root("SERIAL1")
+        assert access == RootAccess.ADB_ROOT_CAPABLE
+
+    def test_detect_root_no_adb_binary_returns_none(self):
+        service = AdbService()
+        with patch.object(Path, "is_file", return_value=False), \
+             patch("wft.application.services.adb_service.shutil.which", return_value=None):
+            access = service.detect_root("SERIAL1")
+        assert access == RootAccess.NONE
+
+    def test_detect_root_unexpected_output_returns_none(self, mock_adb_path):
+        su_ok_garbage = self._mock_run(stdout="totally unexpected output\n")
+        build_type = self._mock_run(stdout="\n")
+        with patch(
+            "wft.application.services.adb_service.subprocess.run",
+            side_effect=[su_ok_garbage, build_type],
+        ):
+            access = mock_adb_path.detect_root("SERIAL1")
+        assert access == RootAccess.NONE
+
+    def test_detect_root_oserror_returns_none(self, mock_adb_path):
+        with patch(
+            "wft.application.services.adb_service.subprocess.run",
+            side_effect=OSError("adb exploded"),
+        ):
+            access = mock_adb_path.detect_root("SERIAL1")
+        assert access == RootAccess.NONE

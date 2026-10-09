@@ -29,6 +29,19 @@ def _now_utc() -> str:
     )
 
 
+class RootAccess(Enum):
+    """Device root capability/access state.
+
+    Distinguishes root *capability* from root *access actually obtained*:
+    ADB_ROOT_CAPABLE only means the build could potentially allow adb root —
+    v1 never executes `adb root`, so it grants no private-path access.
+    """
+
+    NONE = "none"
+    SU = "su"
+    ADB_ROOT_CAPABLE = "adb_root_capable"
+
+
 DEVICE_STATE_MAP: dict[str, AdbState] = {
     "device": AdbState.CONNECTED,
     "unauthorized": AdbState.UNAUTHORIZED,
@@ -154,6 +167,7 @@ class AdbService:
                 [str(path), "version"],
                 capture_output=True,
                 text=True,
+                errors="replace",
                 timeout=10,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
@@ -183,6 +197,7 @@ class AdbService:
                 cmd,
                 capture_output=True,
                 text=True,
+                errors="replace",
                 timeout=timeout,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
@@ -325,7 +340,7 @@ class AdbService:
         try:
             result = subprocess.run(
                 [str(self._adb_path), "version"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True, text=True, errors="replace", timeout=10,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
             if result.returncode == 0:
@@ -364,7 +379,7 @@ class AdbService:
         try:
             result = subprocess.run(
                 [str(path), "version"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True, text=True, errors="replace", timeout=10,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
             if result.returncode == 0:
@@ -372,6 +387,17 @@ class AdbService:
         except (subprocess.SubprocessError, OSError):
             pass
         return None
+
+    def pull_file(self, serial: str, remote_path: str, local_path: Path, timeout: int = 60) -> None:
+        cmd = ["pull", remote_path, str(local_path)]
+        self._run_adb_command(cmd, timeout=timeout, serial=serial)
+
+    def list_directory(self, serial: str, remote_path: str, timeout: int = 15) -> list[str]:
+        result = self._run_adb_command(
+            ["shell", "ls", "-1", remote_path], timeout=timeout, serial=serial,
+        )
+        lines = [l.strip() for l in result.stdout.splitlines() if l.strip()]
+        return [l for l in lines if l != "." and l != ".."]
 
     def get_state(self) -> AdbState:
         if not self._adb_path:
@@ -383,3 +409,34 @@ class AdbService:
             return AdbState.CONNECTED
         except AdbError:
             return AdbState.ADB_SERVER_ERROR
+
+    def detect_root(self, serial: str, timeout: int = 10) -> RootAccess:
+        """Probe root capability/access without restarting the ADB daemon.
+
+        Probe order (all non-invasive; `adb root` is deliberately never
+        invoked because restarting adbd invalidates active connections):
+
+        1. `su -c id` returning uid=0  -> SU (real root access available)
+        2. `getprop ro.build.type` of userdebug/eng -> ADB_ROOT_CAPABLE only
+        3. anything else / any failure  -> NONE
+        """
+        try:
+            result = self._run_adb_command(
+                ["shell", "su -c id"], timeout=timeout, serial=serial
+            )
+            if "uid=0" in result.stdout:
+                return RootAccess.SU
+        except (AdbError, OSError):
+            pass
+
+        try:
+            result = self._run_adb_command(
+                ["shell", "getprop ro.build.type"], timeout=timeout, serial=serial
+            )
+            build_type = result.stdout.strip().lower()
+            if build_type in ("userdebug", "eng"):
+                return RootAccess.ADB_ROOT_CAPABLE
+        except (AdbError, OSError):
+            pass
+
+        return RootAccess.NONE
