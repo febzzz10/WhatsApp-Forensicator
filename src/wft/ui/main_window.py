@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
 
 from wft.bootstrap import Container
 from wft.application.services.case_context import ActiveCaseContext
-from wft.ui.themes.theme_manager import ThemeManager
 from wft.ui.components import (
     AppHeader, NavigationSidebar,
 )
@@ -43,7 +42,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._container = container
         self._ctx = container.case_context
-        self._theme_manager: Optional[ThemeManager] = None
 
         self.setWindowTitle("WHATSAPP FORENSICATOR")
         self.resize(1366, 768)
@@ -266,9 +264,6 @@ class MainWindow(QMainWindow):
             self, "Lock Case",
             "Case locking will be available in a future update.",
         )
-
-    def set_theme_manager(self, tm: ThemeManager) -> None:
-        self._theme_manager = tm
 
     @property
     def container(self) -> Container:

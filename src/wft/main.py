@@ -5,7 +5,6 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from wft.bootstrap import Container
 from wft.ui.main_window import MainWindow
-from wft.ui.themes.theme_manager import ThemeManager
 
 
 def get_settings_path() -> Path:
@@ -45,9 +44,6 @@ def main() -> None:
     app.setApplicationName("WhatsApp Forensicator")
     app.setApplicationVersion(MainWindow.APP_VERSION)
 
-    theme_manager = ThemeManager(app)
-    theme_manager.set_theme("dark_neon")
-
     if not show_legal_notice():
         sys.exit(0)
 
@@ -56,7 +52,6 @@ def main() -> None:
     container.log.info("Application started")
 
     window = MainWindow(container)
-    window.set_theme_manager(theme_manager)
     window.show()
 
     sys.exit(app.exec())

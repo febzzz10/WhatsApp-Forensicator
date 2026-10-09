@@ -49,3 +49,14 @@ class TestThemeManager:
         tm.set_theme("dark_forensic")
         assert len(received) == 1
         assert received[0] == "dark_forensic"
+
+
+class TestUIPackageThemeWiring:
+    def test_ui_package_exports_new_theme_system(self):
+        from wft.ui import ThemeManager as ExportedTM
+        from wft.ui import DesignTokens
+        from wft.ui.theme.theme_manager import ThemeManager as SourceTM
+        from wft.ui.theme.tokens import DesignTokens as SourceDT
+
+        assert ExportedTM is SourceTM
+        assert DesignTokens is SourceDT

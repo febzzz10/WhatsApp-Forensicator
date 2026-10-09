@@ -1,5 +1,5 @@
-from wft.ui.themes.theme_manager import ThemeManager
-from wft.ui.themes.tokens import ColorTokens
+from wft.ui.theme.theme_manager import ThemeManager
+from wft.ui.theme.tokens import DesignTokens
 
 from wft.ui.components import (
     NeonButton,
@@ -16,7 +16,7 @@ from wft.ui.workers import BackgroundWorker, CancellationToken
 
 __all__ = [
     "ThemeManager",
-    "ColorTokens",
+    "DesignTokens",
     "NeonButton",
     "StatusBadge",
     "StatisticCard",
